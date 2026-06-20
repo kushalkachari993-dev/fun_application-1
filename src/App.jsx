@@ -243,13 +243,16 @@ function Layout() {
       </header>
 
       <section className={isHome ? 'hero home-hero' : 'hero compact-hero'}>
-        <p className="eyebrow">Relationship Control Room</p>
-        <h1>{isHome ? 'Four tiny tools for girlfriend and friends' : currentPageTitle(location.pathname)}</h1>
-        <p>
-          {isHome
-            ? 'A fake-serious dashboard for compliments, apologies, friendship stats, and girlfriend happiness checks.'
-            : currentPageDescription(location.pathname)}
-        </p>
+        <div>
+          <p className="eyebrow">Relationship Control Room</p>
+          <h1>{isHome ? 'Four tiny tools for girlfriend and friends' : currentPageTitle(location.pathname)}</h1>
+          <p>
+            {isHome
+              ? 'A fake-serious dashboard for compliments, apologies, friendship stats, and girlfriend happiness checks.'
+              : currentPageDescription(location.pathname)}
+          </p>
+        </div>
+        {isHome && <HeroPreview />}
       </section>
 
       <Outlet />
@@ -276,15 +279,43 @@ function Home() {
       </section>
 
       <div className="page-grid">
-        {pages.map((page) => (
+        {pages.map((page, index) => (
           <Link className={`feature-card ${page.accent}`} key={page.path} to={page.path}>
+            <div className="feature-topline">
+              <span className="feature-number">{String(index + 1).padStart(2, '0')}</span>
+              <strong>Open</strong>
+            </div>
             <span>{page.title}</span>
             <p>{page.description}</p>
-            <strong>Open</strong>
           </Link>
         ))}
       </div>
     </>
+  )
+}
+
+function HeroPreview() {
+  return (
+    <aside className="hero-preview" aria-label="Dashboard preview">
+      <div className="preview-header">
+        <span>Today</span>
+        <strong>HQ Online</strong>
+      </div>
+      <div className="preview-meter">
+        <div />
+      </div>
+      <div className="preview-grid">
+        <div>
+          <span>Compliments</span>
+          <strong>Ready</strong>
+        </div>
+        <div>
+          <span>Apology</span>
+          <strong>Armed</strong>
+        </div>
+      </div>
+      <p>Official status: snacks advised, jokes approved, drama contained.</p>
+    </aside>
   )
 }
 
