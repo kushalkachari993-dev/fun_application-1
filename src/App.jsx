@@ -94,6 +94,62 @@ const friendCompliments = [
   'You are basically family, but with better roast material.',
 ]
 
+const datePlans = [
+  {
+    title: 'Street Food Mission',
+    budget: 'Medium',
+    vibe: 'Laughing while standing near a crowded stall',
+    steps: ['Pick one snack each', 'Share one drink', 'Rate everything like serious judges'],
+  },
+  {
+    title: 'Movie Night Treaty',
+    budget: 'Low',
+    vibe: 'Blanket, snacks, and no judging the movie choice',
+    steps: ['Choose comfort movie', 'Overbuy snacks', 'Pause only for important commentary'],
+  },
+  {
+    title: 'Walk + Ice Cream',
+    budget: 'Low',
+    vibe: 'Soft, simple, secretly perfect',
+    steps: ['Take the long route', 'Buy ice cream', 'Pretend the walk was fitness'],
+  },
+  {
+    title: 'Do Nothing Professionally',
+    budget: 'Free',
+    vibe: 'High quality laziness with emotional benefits',
+    steps: ['Sit together', 'Scroll reels', 'Call it bonding research'],
+  },
+  {
+    title: 'Photo Booth Challenge',
+    budget: 'Medium',
+    vibe: 'Cute photos, questionable poses, permanent evidence',
+    steps: ['Find good light', 'Take ten photos', 'Keep the blurry funny one'],
+  },
+]
+
+const emergencyPlans = {
+  Angry: {
+    danger: 91,
+    opener: 'I understand. I am listening properly now.',
+    steps: ['Say sorry without adding a lecture', 'Ask what hurt her', 'Fix one small thing immediately'],
+  },
+  Sad: {
+    danger: 42,
+    opener: 'I am here. You do not have to explain everything right now.',
+    steps: ['Be soft', 'Offer food or a call', 'Send reassurance twice, not advice ten times'],
+  },
+  Nothing: {
+    danger: 78,
+    opener: 'Nothing sounds like something. I am ready when you are.',
+    steps: ['Do not celebrate too early', 'Stay available', 'Avoid detective mode unless invited'],
+  },
+  Food: {
+    danger: 64,
+    opener: 'Food department is active. Send cravings.',
+    steps: ['Ask sweet or spicy', 'Offer two choices', 'Do not say "anything is fine"'],
+  },
+}
+
 const pages = [
   {
     path: '/girlfriend-meter',
@@ -119,6 +175,24 @@ const pages = [
     description: 'Sweet lines for girlfriend mode and friendship mode.',
     accent: 'compliment',
   },
+  {
+    path: '/date-spinner',
+    title: 'Date Plan Spinner',
+    description: 'Random cute plans for when both of you say "you decide."',
+    accent: 'date',
+  },
+  {
+    path: '/emergency-kit',
+    title: 'Girlfriend Emergency Kit',
+    description: 'Fake survival plans for very real relationship weather.',
+    accent: 'emergency',
+  },
+  {
+    path: '/secret',
+    title: 'Secret Page',
+    description: 'A tiny hidden corner for one cute message.',
+    accent: 'secret',
+  },
 ]
 
 function randomItem(items, current) {
@@ -139,6 +213,9 @@ function App() {
         <Route path="friendship-tracker" element={<FriendshipTracker />} />
         <Route path="apology-generator" element={<ApologyGenerator />} />
         <Route path="compliment-generator" element={<ComplimentGenerator />} />
+        <Route path="date-spinner" element={<DateSpinner />} />
+        <Route path="emergency-kit" element={<EmergencyKit />} />
+        <Route path="secret" element={<SecretPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>
@@ -293,6 +370,94 @@ function ApologyGenerator() {
       buttonText="Generate Sorry"
       onGenerate={() => setApology(randomItem(apologies, apology))}
     />
+  )
+}
+
+function DateSpinner() {
+  const [plan, setPlan] = useState(datePlans[0])
+
+  return (
+    <ToolPage>
+      <section className="date-card">
+        <div className="date-topline">
+          <span className="mini-label">Tonight's official plan</span>
+          <strong>{plan.budget} budget</strong>
+        </div>
+        <h2>{plan.title}</h2>
+        <p>{plan.vibe}</p>
+        <ol>
+          {plan.steps.map((step) => (
+            <li key={step}>{step}</li>
+          ))}
+        </ol>
+        <button type="button" onClick={() => setPlan(randomItem(datePlans, plan))}>
+          Spin Plan
+        </button>
+      </section>
+    </ToolPage>
+  )
+}
+
+function EmergencyKit() {
+  const [selected, setSelected] = useState('Angry')
+  const plan = emergencyPlans[selected]
+
+  return (
+    <ToolPage>
+      <div className="emergency-grid">
+        <div className="emergency-options" aria-label="Emergency type">
+          {Object.keys(emergencyPlans).map((option) => (
+            <button
+              className={selected === option ? 'active' : ''}
+              type="button"
+              key={option}
+              onClick={() => setSelected(option)}
+            >
+              {option === 'Nothing' ? 'She said nothing' : `She is ${option.toLowerCase()}`}
+            </button>
+          ))}
+        </div>
+        <section className="emergency-card">
+          <div className="status-row">
+            <div>
+              <span className="mini-label">Risk level</span>
+              <h2>{selected}</h2>
+            </div>
+            <strong>{plan.danger}%</strong>
+          </div>
+          <p className="opener">"{plan.opener}"</p>
+          <div className="meter-shell" aria-label={`Risk level ${plan.danger} percent`}>
+            <div className="meter-fill danger-fill" style={{ width: `${plan.danger}%` }} />
+          </div>
+          <ol>
+            {plan.steps.map((step) => (
+              <li key={step}>{step}</li>
+            ))}
+          </ol>
+        </section>
+      </div>
+    </ToolPage>
+  )
+}
+
+function SecretPage() {
+  const [unlocked, setUnlocked] = useState(false)
+
+  return (
+    <ToolPage>
+      <section className={`secret-card ${unlocked ? 'unlocked' : ''}`}>
+        <span className="mini-label">Secret corner</span>
+        <h2>{unlocked ? 'You found the soft launch of my heart' : 'Locked for VIP only'}</h2>
+        <p>
+          {unlocked
+            ? 'This website is silly, but the smile it is trying to create is very serious.'
+            : 'Press the button if you are girlfriend, best friend, or officially allowed to know too much.'}
+        </p>
+        <button type="button" onClick={() => setUnlocked(!unlocked)}>
+          {unlocked ? 'Lock Again' : 'Unlock Secret'}
+        </button>
+      </section>
+    </ToolPage>
   )
 }
 

@@ -191,13 +191,28 @@ nav a.active {
   --card-accent: #6f5aa8;
 }
 
+.date {
+  --card-accent: #2f7d4c;
+}
+
+.emergency {
+  --card-accent: #9b2f3f;
+}
+
+.secret {
+  --card-accent: #3d5a80;
+}
+
 .tool-page {
   padding: 12px clamp(18px, 5vw, 64px) 70px;
 }
 
 .meter-panel,
 .generator-box,
-.friend-card {
+.friend-card,
+.date-card,
+.emergency-card,
+.secret-card {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #fff;
@@ -205,7 +220,9 @@ nav a.active {
 }
 
 .meter-panel,
-.generator-box {
+.generator-box,
+.date-card,
+.secret-card {
   max-width: 720px;
   padding: clamp(22px, 4vw, 36px);
 }
@@ -378,6 +395,137 @@ button:hover {
   line-height: 1.06;
 }
 
+.date-card h2,
+.secret-card h2 {
+  margin: 12px 0;
+  color: var(--ink);
+  font-size: clamp(34px, 6vw, 64px);
+  line-height: 1;
+}
+
+.date-card p,
+.secret-card p,
+.emergency-card p {
+  color: var(--muted);
+  font-size: 18px;
+}
+
+.date-topline {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: center;
+}
+
+.date-topline strong {
+  color: #2f7d4c;
+  background: #e6f3eb;
+  border-radius: 999px;
+  padding: 7px 11px;
+  white-space: nowrap;
+}
+
+.date-card ol,
+.emergency-card ol {
+  display: grid;
+  gap: 10px;
+  margin: 24px 0 0;
+  padding-left: 22px;
+  color: var(--ink);
+  font-weight: 800;
+}
+
+.date-card button {
+  margin-top: 26px;
+  background: #2f7d4c;
+}
+
+.date-card button:hover {
+  background: #24643c;
+}
+
+.emergency-grid {
+  display: grid;
+  grid-template-columns: 280px minmax(0, 720px);
+  gap: 16px;
+  align-items: start;
+}
+
+.emergency-options {
+  display: grid;
+  gap: 10px;
+}
+
+.emergency-options button {
+  color: var(--ink);
+  background: #fff;
+  border: 1px solid var(--line);
+  text-align: left;
+}
+
+.emergency-options button:hover,
+.emergency-options button.active {
+  color: #fff;
+  background: #9b2f3f;
+  border-color: #9b2f3f;
+}
+
+.emergency-card {
+  padding: clamp(22px, 4vw, 36px);
+}
+
+.emergency-card .status-row {
+  margin-top: 0;
+}
+
+.emergency-card .status-row strong {
+  color: #9b2f3f;
+}
+
+.opener {
+  margin: 22px 0;
+  color: var(--ink);
+  font-weight: 900;
+}
+
+.danger-fill {
+  background: linear-gradient(90deg, #2f7d4c, #f0b85a, #9b2f3f);
+}
+
+.secret-card {
+  position: relative;
+  overflow: hidden;
+  background:
+    linear-gradient(135deg, rgba(61, 90, 128, 0.12), transparent 22rem),
+    #fff;
+}
+
+.secret-card::after {
+  content: "";
+  position: absolute;
+  right: 22px;
+  bottom: 18px;
+  width: 90px;
+  height: 90px;
+  border-radius: 999px;
+  background: rgba(61, 90, 128, 0.12);
+}
+
+.secret-card.unlocked {
+  border-color: rgba(61, 90, 128, 0.5);
+}
+
+.secret-card button {
+  position: relative;
+  z-index: 1;
+  margin-top: 24px;
+  background: #3d5a80;
+}
+
+.secret-card button:hover {
+  background: #304965;
+}
+
 .segmented-control {
   display: inline-flex;
   gap: 4px;
@@ -412,7 +560,8 @@ button:hover {
 
   .page-grid,
   .quick-stats,
-  .friend-list {
+  .friend-list,
+  .emergency-grid {
     grid-template-columns: 1fr;
   }
 
