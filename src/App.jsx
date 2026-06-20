@@ -152,10 +152,21 @@ const emergencyPlans = {
 
 const funBursts = [
   'Snack protocol activated',
-  'Drama shield online',
-  'Compliment cannon loaded',
-  'Friendship server boosted',
-  'Date night probability increased',
+  'Drama shield overloaded',
+  'Compliment cannon misfired beautifully',
+  'Friendship server boosted beyond warranty',
+  'Date night probability is now unreasonable',
+  'Emergency cuteness detected',
+  'Reply speed entered mystery mode',
+  'Apology generator requesting emotional backup',
+]
+
+const chaosAlerts = [
+  'Warning: girlfriend happiness meter has started judging your playlist.',
+  'System notice: one friend is online and still not replying.',
+  'Alert: snacks are below legally acceptable levels.',
+  'Romance engine found 3 unsent compliments in drafts.',
+  'Friendship tracker reports suspicious roasting activity.',
 ]
 
 const missions = [
@@ -275,10 +286,12 @@ function Layout() {
   const isHome = location.pathname === '/'
   const [funMode, setFunMode] = useState(false)
   const [burst, setBurst] = useState(funBursts[0])
+  const [alert, setAlert] = useState(chaosAlerts[0])
 
   function toggleFunMode() {
     setFunMode(!funMode)
     setBurst(randomItem(funBursts, burst))
+    setAlert(randomItem(chaosAlerts, alert))
   }
 
   return (
@@ -298,13 +311,25 @@ function Layout() {
             ))}
           </nav>
           <button className="fun-toggle" type="button" onClick={toggleFunMode}>
-            {funMode ? 'Fun Mode On' : 'Fun Mode'}
+            {funMode ? 'Chaos Mode On' : 'Chaos Mode'}
           </button>
         </div>
       </header>
-      <div className="burst-badge" aria-live="polite">
+      {funMode && (
+        <div className="chaos-alert" aria-live="polite">
+          {alert}
+        </div>
+      )}
+      <button
+        className="burst-badge"
+        type="button"
+        onClick={() => {
+          setBurst(randomItem(funBursts, burst))
+          setAlert(randomItem(chaosAlerts, alert))
+        }}
+      >
         {burst}
-      </div>
+      </button>
 
       <section className={isHome ? 'hero home-hero' : 'hero compact-hero'}>
         <div>
@@ -318,6 +343,7 @@ function Layout() {
         </div>
         {isHome && <HeroPreview />}
       </section>
+      {isHome && <ChaosConsole active={funMode} />}
 
       <Outlet />
     </main>
@@ -366,6 +392,26 @@ function Home() {
         ))}
       </div>
     </>
+  )
+}
+
+function ChaosConsole({ active }) {
+  const consoleItems = active
+    ? ['Compliment cannon: unstable', 'Snack radar: screaming', 'Friend reply estimate: fictional']
+    : ['Compliment cannon: ready', 'Snack radar: calm', 'Friend reply estimate: optimistic']
+
+  return (
+    <section className={`chaos-console ${active ? 'active' : ''}`} aria-label="Chaos console">
+      <div>
+        <span className="mini-label">{active ? 'Chaos console live' : 'Chaos console idle'}</span>
+        <h2>{active ? 'Everything is under absolutely fake control' : 'Press Chaos Mode when life is too peaceful'}</h2>
+      </div>
+      <div className="console-list">
+        {consoleItems.map((item) => (
+          <p key={item}>{item}</p>
+        ))}
+      </div>
+    </section>
   )
 }
 
