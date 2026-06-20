@@ -150,6 +150,47 @@ const emergencyPlans = {
   },
 }
 
+const funBursts = [
+  'Snack protocol activated',
+  'Drama shield online',
+  'Compliment cannon loaded',
+  'Friendship server boosted',
+  'Date night probability increased',
+]
+
+const missions = [
+  {
+    title: 'Send a no-context compliment',
+    target: 'Girlfriend',
+    reward: '+18 happiness points',
+    detail: 'Make it specific enough that it cannot be mistaken for a copied line.',
+  },
+  {
+    title: 'Plan a five-minute call',
+    target: 'Girlfriend',
+    reward: '+1 peace treaty',
+    detail: 'The mission succeeds if both people smile before ending the call.',
+  },
+  {
+    title: 'Roast a friend gently',
+    target: 'Friends',
+    reward: '+12 loyalty damage',
+    detail: 'Keep it funny, not personal. Friendship law is watching.',
+  },
+  {
+    title: 'Send the funniest old photo',
+    target: 'Friends',
+    reward: '+30 memory points',
+    detail: 'Bonus points if everyone denies that phase ever happened.',
+  },
+  {
+    title: 'Make a tiny date plan',
+    target: 'Girlfriend',
+    reward: '+22 romance XP',
+    detail: 'One food item, one place, one backup plan. Very official.',
+  },
+]
+
 const pages = [
   {
     path: '/girlfriend-meter',
@@ -193,6 +234,12 @@ const pages = [
     description: 'A tiny hidden corner for one cute message.',
     accent: 'secret',
   },
+  {
+    path: '/mission-wheel',
+    title: 'Mission Wheel',
+    description: 'Spin for one tiny chaotic task to complete today.',
+    accent: 'mission',
+  },
 ]
 
 function randomItem(items, current) {
@@ -216,6 +263,7 @@ function App() {
         <Route path="date-spinner" element={<DateSpinner />} />
         <Route path="emergency-kit" element={<EmergencyKit />} />
         <Route path="secret" element={<SecretPage />} />
+        <Route path="mission-wheel" element={<MissionWheel />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>
@@ -225,22 +273,38 @@ function App() {
 function Layout() {
   const location = useLocation()
   const isHome = location.pathname === '/'
+  const [funMode, setFunMode] = useState(false)
+  const [burst, setBurst] = useState(funBursts[0])
+
+  function toggleFunMode() {
+    setFunMode(!funMode)
+    setBurst(randomItem(funBursts, burst))
+  }
 
   return (
-    <main className="app-shell">
+    <main className={`app-shell ${funMode ? 'fun-mode' : ''}`}>
+      <FloatingStickers />
       <header className="topbar">
         <Link className="brand" to="/">
           <span className="brand-mark">JF</span>
           <span>Just For Fun HQ</span>
         </Link>
-        <nav aria-label="Main pages">
-          {pages.map((page) => (
-            <NavLink key={page.path} to={page.path}>
-              {page.title.replace(' Generator', '').replace(' Tracker', '')}
-            </NavLink>
-          ))}
-        </nav>
+        <div className="topbar-actions">
+          <nav aria-label="Main pages">
+            {pages.map((page) => (
+              <NavLink key={page.path} to={page.path}>
+                {page.title.replace(' Generator', '').replace(' Tracker', '')}
+              </NavLink>
+            ))}
+          </nav>
+          <button className="fun-toggle" type="button" onClick={toggleFunMode}>
+            {funMode ? 'Fun Mode On' : 'Fun Mode'}
+          </button>
+        </div>
       </header>
+      <div className="burst-badge" aria-live="polite">
+        {burst}
+      </div>
 
       <section className={isHome ? 'hero home-hero' : 'hero compact-hero'}>
         <div>
@@ -257,6 +321,17 @@ function Layout() {
 
       <Outlet />
     </main>
+  )
+}
+
+function FloatingStickers() {
+  return (
+    <div className="floating-stickers" aria-hidden="true">
+      <span>LOL</span>
+      <span>BRB</span>
+      <span>VIP</span>
+      <span>100%</span>
+    </div>
   )
 }
 
@@ -487,6 +562,41 @@ function SecretPage() {
         <button type="button" onClick={() => setUnlocked(!unlocked)}>
           {unlocked ? 'Lock Again' : 'Unlock Secret'}
         </button>
+      </section>
+    </ToolPage>
+  )
+}
+
+function MissionWheel() {
+  const [mission, setMission] = useState(missions[0])
+  const [completed, setCompleted] = useState(false)
+
+  function spinMission() {
+    setMission(randomItem(missions, mission))
+    setCompleted(false)
+  }
+
+  return (
+    <ToolPage>
+      <section className={`mission-card ${completed ? 'completed' : ''}`}>
+        <div className="date-topline">
+          <span className="mini-label">Tiny mission</span>
+          <strong>{mission.target}</strong>
+        </div>
+        <h2>{mission.title}</h2>
+        <p>{mission.detail}</p>
+        <div className="reward-box">
+          <span className="mini-label">Reward</span>
+          <p>{completed ? 'Mission logged. You are now officially productive.' : mission.reward}</p>
+        </div>
+        <div className="button-row">
+          <button type="button" onClick={spinMission}>
+            Spin Mission
+          </button>
+          <button className="secondary-button" type="button" onClick={() => setCompleted(!completed)}>
+            {completed ? 'Undo Done' : 'Mark Done'}
+          </button>
+        </div>
       </section>
     </ToolPage>
   )

@@ -1,5 +1,13 @@
 .app-shell {
+  position: relative;
   min-height: 100svh;
+  overflow: hidden;
+}
+
+.app-shell.fun-mode {
+  background:
+    radial-gradient(circle at 18% 22%, rgba(227, 172, 86, 0.18), transparent 20rem),
+    radial-gradient(circle at 82% 14%, rgba(109, 90, 164, 0.16), transparent 18rem);
 }
 
 .topbar {
@@ -45,6 +53,14 @@ nav {
   flex-wrap: wrap;
 }
 
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
 nav a {
   color: var(--muted);
   text-decoration: none;
@@ -63,7 +79,87 @@ nav a.active {
   box-shadow: 0 10px 24px rgba(35, 50, 58, 0.08);
 }
 
+.fun-toggle {
+  flex: 0 0 auto;
+  padding: 9px 13px;
+  border-radius: 999px;
+  background: #202832;
+  box-shadow: 0 12px 24px rgba(32, 40, 50, 0.18);
+  font-size: 13px;
+}
+
+.fun-toggle:hover {
+  background: #111820;
+}
+
+.burst-badge {
+  position: fixed;
+  right: clamp(16px, 4vw, 42px);
+  bottom: 18px;
+  z-index: 20;
+  max-width: min(320px, calc(100vw - 32px));
+  padding: 12px 15px;
+  border: 1px solid rgba(35, 50, 58, 0.1);
+  border-radius: 999px;
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.88);
+  box-shadow: 0 18px 46px rgba(35, 50, 58, 0.14);
+  font-size: 13px;
+  font-weight: 900;
+  pointer-events: none;
+}
+
+.floating-stickers {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.floating-stickers span {
+  position: absolute;
+  display: inline-grid;
+  place-items: center;
+  width: 58px;
+  height: 58px;
+  border: 1px solid rgba(35, 50, 58, 0.08);
+  border-radius: 16px;
+  color: rgba(32, 40, 50, 0.26);
+  background: rgba(255, 255, 255, 0.36);
+  font-size: 12px;
+  font-weight: 950;
+  transform: rotate(-10deg);
+  animation: floatSticker 8s ease-in-out infinite;
+}
+
+.floating-stickers span:nth-child(1) {
+  left: 4vw;
+  top: 28svh;
+}
+
+.floating-stickers span:nth-child(2) {
+  right: 8vw;
+  top: 42svh;
+  animation-delay: -2s;
+  transform: rotate(12deg);
+}
+
+.floating-stickers span:nth-child(3) {
+  left: 52vw;
+  bottom: 16svh;
+  animation-delay: -4s;
+}
+
+.floating-stickers span:nth-child(4) {
+  right: 22vw;
+  top: 18svh;
+  animation-delay: -6s;
+  transform: rotate(8deg);
+}
+
 .hero {
+  position: relative;
+  z-index: 1;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: 28px;
@@ -203,6 +299,8 @@ nav a.active {
 }
 
 .quick-stats {
+  position: relative;
+  z-index: 1;
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 14px;
@@ -224,6 +322,8 @@ nav a.active {
 }
 
 .page-grid {
+  position: relative;
+  z-index: 1;
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 16px;
@@ -322,7 +422,14 @@ nav a.active {
   --card-soft: #edf3fb;
 }
 
+.mission {
+  --card-accent: #b05a7a;
+  --card-soft: #fff0f6;
+}
+
 .tool-page {
+  position: relative;
+  z-index: 1;
   padding: 12px clamp(18px, 5vw, 72px) 76px;
 }
 
@@ -331,7 +438,8 @@ nav a.active {
 .friend-card,
 .date-card,
 .emergency-card,
-.secret-card {
+.secret-card,
+.mission-card {
   border: 1px solid rgba(35, 50, 58, 0.1);
   border-radius: 18px;
   background: rgba(255, 255, 255, 0.84);
@@ -341,7 +449,8 @@ nav a.active {
 .meter-panel,
 .generator-box,
 .date-card,
-.secret-card {
+.secret-card,
+.mission-card {
   max-width: 760px;
   padding: clamp(24px, 4vw, 40px);
 }
@@ -386,7 +495,8 @@ nav a.active {
 .friend-card p,
 .date-card p,
 .secret-card p,
-.emergency-card p {
+.emergency-card p,
+.mission-card p {
   color: var(--muted);
   font-size: 18px;
 }
@@ -524,7 +634,8 @@ button:hover {
 }
 
 .date-card h2,
-.secret-card h2 {
+.secret-card h2,
+.mission-card h2 {
   margin: 14px 0;
   color: var(--ink);
   font-size: clamp(36px, 6vw, 66px);
@@ -646,6 +757,70 @@ button:hover {
   background: #304965;
 }
 
+.mission-card {
+  position: relative;
+  overflow: hidden;
+  background:
+    linear-gradient(135deg, rgba(176, 90, 122, 0.12), transparent 24rem),
+    rgba(255, 255, 255, 0.9);
+}
+
+.mission-card::before {
+  content: "DONE";
+  position: absolute;
+  right: 26px;
+  top: 28px;
+  color: rgba(176, 90, 122, 0);
+  border: 2px solid rgba(176, 90, 122, 0);
+  border-radius: 12px;
+  padding: 8px 12px;
+  font-size: 18px;
+  font-weight: 950;
+  transform: rotate(10deg);
+  transition:
+    color 180ms ease,
+    border-color 180ms ease;
+}
+
+.mission-card.completed::before {
+  color: rgba(176, 90, 122, 0.72);
+  border-color: rgba(176, 90, 122, 0.38);
+}
+
+.mission-card .date-topline strong {
+  color: #b05a7a;
+  background: #fde8f0;
+}
+
+.mission-card button {
+  background: #b05a7a;
+  box-shadow: 0 12px 24px rgba(176, 90, 122, 0.18);
+}
+
+.mission-card button:hover {
+  background: #934661;
+}
+
+.mission-card .secondary-button {
+  color: var(--ink);
+  background: #f6e9ee;
+  box-shadow: none;
+}
+
+.reward-box {
+  margin-top: 26px;
+  padding: 20px;
+  border: 1px dashed rgba(176, 90, 122, 0.35);
+  border-radius: 16px;
+  background: rgba(255, 240, 246, 0.72);
+}
+
+.reward-box p {
+  margin: 7px 0 0;
+  color: var(--ink);
+  font-weight: 900;
+}
+
 .segmented-control {
   display: inline-flex;
   gap: 4px;
@@ -671,6 +846,17 @@ button:hover {
   box-shadow: none;
 }
 
+@keyframes floatSticker {
+  0%,
+  100% {
+    translate: 0 0;
+  }
+
+  50% {
+    translate: 0 -16px;
+  }
+}
+
 @media (max-width: 1100px) {
   .page-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -689,6 +875,10 @@ button:hover {
   .topbar {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .topbar-actions {
+    justify-content: flex-start;
   }
 
   nav {
@@ -724,5 +914,15 @@ button:hover {
 
   .topbar {
     position: static;
+  }
+
+  .burst-badge {
+    left: 16px;
+    right: 16px;
+    text-align: center;
+  }
+
+  .floating-stickers {
+    display: none;
   }
 }
