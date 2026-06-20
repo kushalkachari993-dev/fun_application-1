@@ -245,7 +245,7 @@ function Layout() {
       <section className={isHome ? 'hero home-hero' : 'hero compact-hero'}>
         <div>
           <p className="eyebrow">Relationship Control Room</p>
-          <h1>{isHome ? 'Four tiny tools for girlfriend and friends' : currentPageTitle(location.pathname)}</h1>
+          <h1>{isHome ? 'Relationship HQ for girlfriend and friends' : currentPageTitle(location.pathname)}</h1>
           <p>
             {isHome
               ? 'A fake-serious dashboard for compliments, apologies, friendship stats, and girlfriend happiness checks.'
