@@ -11,10 +11,30 @@ import {
 import './App.css'
 
 const girlfriendStatuses = [
-  { label: 'Stable', value: 84, note: 'Safe zone. Random compliments still recommended.' },
-  { label: 'Needs snacks', value: 58, note: 'Deploy chocolate, fries, or emotional support momos.' },
-  { label: 'Suspiciously quiet', value: 34, note: 'Proceed gently. Ask what happened, then actually listen.' },
-  { label: 'Send compliment immediately', value: 18, note: 'Critical. Use sweet words before making jokes.' },
+  {
+    label: 'Stable',
+    value: 84,
+    note: 'Safe zone. Random compliments still recommended.',
+    action: 'Send a cute selfie and keep the peace treaty active.',
+  },
+  {
+    label: 'Needs snacks',
+    value: 58,
+    note: 'Deploy chocolate, fries, or emotional support momos.',
+    action: 'Ask what she wants to eat. Do not guess with confidence.',
+  },
+  {
+    label: 'Suspiciously quiet',
+    value: 34,
+    note: 'Proceed gently. Ask what happened, then actually listen.',
+    action: 'Reduce jokes by 70 percent and increase attention immediately.',
+  },
+  {
+    label: 'Send compliment immediately',
+    value: 18,
+    note: 'Critical. Use sweet words before making jokes.',
+    action: 'Compliment first, explanation later. This is not a drill.',
+  },
 ]
 
 const friends = [
@@ -64,6 +84,14 @@ const compliments = [
   'You look like peace, drama, and cuteness signed one partnership deal.',
   'You are my favorite notification.',
   'You have premium-person energy with lifetime validity.',
+]
+
+const friendCompliments = [
+  'You are annoying, but in a limited edition way.',
+  'Your bad ideas somehow create the best memories.',
+  'You are the reason simple plans become legendary stories.',
+  'Your confidence is inspiring for someone with that playlist.',
+  'You are basically family, but with better roast material.',
 ]
 
 const pages = [
@@ -154,15 +182,32 @@ function Layout() {
 
 function Home() {
   return (
-    <div className="page-grid">
-      {pages.map((page) => (
-        <Link className={`feature-card ${page.accent}`} key={page.path} to={page.path}>
-          <span>{page.title}</span>
-          <p>{page.description}</p>
-          <strong>Open</strong>
-        </Link>
-      ))}
-    </div>
+    <>
+      <section className="quick-stats" aria-label="Fake dashboard stats">
+        <div>
+          <span>Drama risk</span>
+          <strong>12%</strong>
+        </div>
+        <div>
+          <span>Snack readiness</span>
+          <strong>98%</strong>
+        </div>
+        <div>
+          <span>Reply speed</span>
+          <strong>Maybe</strong>
+        </div>
+      </section>
+
+      <div className="page-grid">
+        {pages.map((page) => (
+          <Link className={`feature-card ${page.accent}`} key={page.path} to={page.path}>
+            <span>{page.title}</span>
+            <p>{page.description}</p>
+            <strong>Open</strong>
+          </Link>
+        ))}
+      </div>
+    </>
   )
 }
 
@@ -184,20 +229,35 @@ function GirlfriendMeter() {
           <strong>{status.value}%</strong>
         </div>
         <p>{status.note}</p>
-        <button type="button" onClick={() => setStatusIndex((statusIndex + 1) % girlfriendStatuses.length)}>
-          Scan Again
-        </button>
+        <div className="next-action">
+          <span className="mini-label">Recommended move</span>
+          <p>{status.action}</p>
+        </div>
+        <div className="button-row">
+          <button type="button" onClick={() => setStatusIndex((statusIndex + 1) % girlfriendStatuses.length)}>
+            Scan Again
+          </button>
+          <button
+            className="secondary-button"
+            type="button"
+            onClick={() => setStatusIndex(Math.floor(Math.random() * girlfriendStatuses.length))}
+          >
+            Random Mood
+          </button>
+        </div>
       </div>
     </ToolPage>
   )
 }
 
 function FriendshipTracker() {
+  const [boostedFriend, setBoostedFriend] = useState('')
+
   return (
     <ToolPage>
       <div className="friend-list">
         {friends.map((friend) => (
-          <article className="friend-card" key={friend.name}>
+          <article className={`friend-card ${boostedFriend === friend.name ? 'boosted' : ''}`} key={friend.name}>
             <div>
               <h2>{friend.name}</h2>
               <p>{friend.title}</p>
@@ -213,6 +273,9 @@ function FriendshipTracker() {
                 </div>
               ))}
             </div>
+            <button type="button" onClick={() => setBoostedFriend(friend.name)}>
+              Boost Loyalty
+            </button>
           </article>
         ))}
       </div>
@@ -234,34 +297,76 @@ function ApologyGenerator() {
 }
 
 function ComplimentGenerator() {
+  const [mode, setMode] = useState('Girlfriend')
   const [compliment, setCompliment] = useState(compliments[0])
   const [luckyNumber, setLuckyNumber] = useState(97)
 
   function generateCompliment() {
-    setCompliment(randomItem(compliments, compliment))
+    const list = mode === 'Girlfriend' ? compliments : friendCompliments
+    setCompliment(randomItem(list, compliment))
     setLuckyNumber(Math.floor(Math.random() * 90) + 10)
   }
 
+  function changeMode(nextMode) {
+    setMode(nextMode)
+    setCompliment(nextMode === 'Girlfriend' ? compliments[0] : friendCompliments[0])
+    setLuckyNumber(97)
+  }
+
   return (
-    <GeneratorPage
-      label={`Compliment quality: ${luckyNumber}%`}
-      text={compliment}
-      buttonText="Generate Compliment"
-      onGenerate={generateCompliment}
-    />
+    <ToolPage>
+      <div className="segmented-control" aria-label="Compliment mode">
+        {['Girlfriend', 'Friends'].map((option) => (
+          <button
+            className={mode === option ? 'active' : ''}
+            type="button"
+            key={option}
+            onClick={() => changeMode(option)}
+          >
+            {option}
+          </button>
+        ))}
+      </div>
+      <GeneratorPage
+        label={`Compliment quality: ${luckyNumber}%`}
+        text={compliment}
+        buttonText="Generate Compliment"
+        onGenerate={generateCompliment}
+        embedded
+      />
+    </ToolPage>
   )
 }
 
-function GeneratorPage({ label, text, buttonText, onGenerate }) {
-  return (
-    <ToolPage>
-      <section className="generator-box">
-        <span className="mini-label">{label}</span>
-        <blockquote>{text}</blockquote>
+function GeneratorPage({ label, text, buttonText, onGenerate, embedded = false }) {
+  const [copied, setCopied] = useState(false)
+
+  function copyText() {
+    navigator.clipboard.writeText(text)
+    setCopied(true)
+    window.setTimeout(() => setCopied(false), 1200)
+  }
+
+  const content = (
+    <section className="generator-box">
+      <span className="mini-label">{label}</span>
+      <blockquote>{text}</blockquote>
+      <div className="button-row">
         <button type="button" onClick={onGenerate}>
           {buttonText}
         </button>
-      </section>
+        <button className="secondary-button" type="button" onClick={copyText}>
+          {copied ? 'Copied' : 'Copy Text'}
+        </button>
+      </div>
+    </section>
+  )
+
+  if (embedded) return content
+
+  return (
+    <ToolPage>
+      {content}
     </ToolPage>
   )
 }

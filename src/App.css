@@ -100,7 +100,37 @@ nav a.active {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 14px;
-  padding: 10px clamp(18px, 5vw, 64px) 64px;
+  padding: 16px clamp(18px, 5vw, 64px) 64px;
+}
+
+.quick-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  padding: 0 clamp(18px, 5vw, 64px);
+}
+
+.quick-stats div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 16px 18px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.76);
+}
+
+.quick-stats span {
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.quick-stats strong {
+  color: var(--ink);
+  font-size: 26px;
+  line-height: 1;
 }
 
 .feature-card {
@@ -221,13 +251,35 @@ nav a.active {
   color: var(--muted);
 }
 
+.next-action {
+  margin-top: 22px;
+  padding: 18px;
+  border-radius: 8px;
+  background: #f7f4eb;
+  border: 1px solid #e9dfc8;
+}
+
+.next-action p {
+  margin-top: 6px;
+  color: var(--ink);
+  font-weight: 800;
+}
+
+.button-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin-top: 26px;
+}
+
 button {
   border: 0;
   border-radius: 8px;
   color: #fff;
   background: #1f7a8c;
   padding: 13px 18px;
-  margin-top: 26px;
+  margin-top: 0;
   font: inherit;
   font-weight: 900;
   cursor: pointer;
@@ -235,6 +287,15 @@ button {
 
 button:hover {
   background: #176374;
+}
+
+.secondary-button {
+  color: var(--ink);
+  background: #eef5f6;
+}
+
+.secondary-button:hover {
+  background: #dceced;
 }
 
 .friend-list {
@@ -245,6 +306,31 @@ button:hover {
 
 .friend-card {
   padding: 22px;
+  transition:
+    border-color 160ms ease,
+    transform 160ms ease;
+}
+
+.friend-card button {
+  margin-top: 22px;
+}
+
+.friend-card.boosted {
+  border-color: rgba(31, 122, 140, 0.55);
+  transform: translateY(-3px);
+}
+
+.friend-card.boosted::after {
+  content: "Loyalty boosted";
+  display: inline-flex;
+  align-self: flex-start;
+  margin-top: 16px;
+  color: #176374;
+  background: #e3f1f3;
+  border-radius: 999px;
+  padding: 6px 10px;
+  font-size: 13px;
+  font-weight: 900;
 }
 
 .stat-list {
@@ -292,6 +378,28 @@ button:hover {
   line-height: 1.06;
 }
 
+.segmented-control {
+  display: inline-flex;
+  gap: 4px;
+  padding: 5px;
+  margin-bottom: 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.segmented-control button {
+  color: var(--muted);
+  background: transparent;
+  padding: 10px 14px;
+}
+
+.segmented-control button:hover,
+.segmented-control button.active {
+  color: #fff;
+  background: #6f5aa8;
+}
+
 @media (max-width: 900px) {
   .topbar {
     align-items: flex-start;
@@ -303,6 +411,7 @@ button:hover {
   }
 
   .page-grid,
+  .quick-stats,
   .friend-list {
     grid-template-columns: 1fr;
   }
