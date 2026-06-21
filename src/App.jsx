@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
   Link,
   NavLink,
@@ -8,7 +8,9 @@ import {
   Routes,
   useLocation,
 } from 'react-router-dom'
+import { doc, getDoc, onSnapshot, serverTimestamp, setDoc } from 'firebase/firestore'
 import './App.css'
+import { db, isFirebaseConfigured } from './firebase'
 
 const girlfriendStatuses = [
   {
@@ -315,6 +317,19 @@ function createRoomCode() {
 function getInitialRoomCode() {
   const params = new URLSearchParams(window.location.search)
   return params.get('room')?.toUpperCase() || createRoomCode()
+}
+
+function createInitialRoom(roomCode) {
+  const game = roomGames[0]
+
+  return {
+    roomCode,
+    players: ['You'],
+    game,
+    prompt: promptForGame(game, ''),
+    round: 1,
+    reactions: { laughs: 0, chaos: 0, skip: 0 },
+  }
 }
 
 function promptForGame(game, currentPrompt) {
@@ -824,29 +839,75 @@ function PlayRoom() {
 }
 
 function GameRoom() {
-  const [roomCode, setRoomCode] = useState(getInitialRoomCode)
-  const [players, setPlayers] = useState(['You', 'Best Friend'])
+  const [room, setRoom] = useState(() => createInitialRoom(getInitialRoomCode()))
   const [playerName, setPlayerName] = useState('')
-  const [game, setGame] = useState(roomGames[0])
-  const [prompt, setPrompt] = useState(promptForGame(roomGames[0], ''))
-  const [round, setRound] = useState(1)
   const [copied, setCopied] = useState(false)
-  const [reactions, setReactions] = useState({ laughs: 0, chaos: 0, skip: 0 })
+  const [syncStatus, setSyncStatus] = useState(isFirebaseConfigured ? 'Connecting' : 'Local demo')
+  const { game, players, prompt, reactions, roomCode, round } = room
+
+  useEffect(() => {
+    if (!isFirebaseConfigured) return undefined
+
+    const roomRef = doc(db, 'rooms', roomCode)
+
+    getDoc(roomRef)
+      .then((snapshot) => {
+        if (!snapshot.exists()) {
+          return setDoc(roomRef, {
+            ...createInitialRoom(roomCode),
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          })
+        }
+        return undefined
+      })
+      .catch(() => setSyncStatus('Offline'))
+
+    return onSnapshot(
+      roomRef,
+      (snapshot) => {
+        if (snapshot.exists()) {
+          setRoom((currentRoom) => ({ ...currentRoom, ...snapshot.data() }))
+          setSyncStatus('Live')
+        }
+      },
+      () => setSyncStatus('Offline'),
+    )
+  }, [roomCode])
+
+  function patchRoom(patch) {
+    setRoom((currentRoom) => ({ ...currentRoom, ...patch }))
+
+    if (!isFirebaseConfigured) return
+
+    setDoc(doc(db, 'rooms', roomCode), {
+      ...patch,
+      updatedAt: serverTimestamp(),
+    }, { merge: true }).catch(() => setSyncStatus('Offline'))
+  }
 
   function addPlayer(event) {
     event.preventDefault()
     const trimmedName = playerName.trim()
     if (!trimmedName || players.includes(trimmedName)) return
-    setPlayers([...players, trimmedName])
+    patchRoom({ players: [...players, trimmedName] })
     setPlayerName('')
   }
 
   function startNewRoom() {
     const nextCode = createRoomCode()
-    setRoomCode(nextCode)
-    setRound(1)
-    setReactions({ laughs: 0, chaos: 0, skip: 0 })
+    const nextRoom = createInitialRoom(nextCode)
+    setRoom(nextRoom)
+    setSyncStatus(isFirebaseConfigured ? 'Connecting' : 'Local demo')
     window.history.replaceState(null, '', `/game-room?room=${nextCode}`)
+
+    if (isFirebaseConfigured) {
+      setDoc(doc(db, 'rooms', nextCode), {
+        ...nextRoom,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      }).catch(() => setSyncStatus('Offline'))
+    }
   }
 
   function copyInvite() {
@@ -857,15 +918,28 @@ function GameRoom() {
   }
 
   function changeGame(nextGame) {
-    setGame(nextGame)
-    setPrompt(promptForGame(nextGame, prompt))
-    setRound(1)
-    setReactions({ laughs: 0, chaos: 0, skip: 0 })
+    patchRoom({
+      game: nextGame,
+      prompt: promptForGame(nextGame, prompt),
+      round: 1,
+      reactions: { laughs: 0, chaos: 0, skip: 0 },
+    })
   }
 
   function nextRound() {
-    setPrompt(promptForGame(game, prompt))
-    setRound((round) => round + 1)
+    patchRoom({
+      prompt: promptForGame(game, prompt),
+      round: round + 1,
+    })
+  }
+
+  function addReaction(reaction) {
+    patchRoom({
+      reactions: {
+        ...reactions,
+        [reaction]: reactions[reaction] + 1,
+      },
+    })
   }
 
   return (
@@ -876,6 +950,9 @@ function GameRoom() {
             <span className="mini-label">Common room</span>
             <h2>Game Room</h2>
             <p>Use one room code, gather names, pick a game, and run the same round together.</p>
+            <span className={`sync-pill ${syncStatus.toLowerCase().replace(' ', '-')}`}>
+              {syncStatus === 'Live' ? 'Firebase live sync' : syncStatus}
+            </span>
           </div>
           <div className="room-code-card">
             <span>Room Code</span>
@@ -933,13 +1010,13 @@ function GameRoom() {
               <h3>{prompt}</h3>
               <p>Read this out loud. Everyone answers, votes, argues, laughs, then the host hits next round.</p>
               <div className="reaction-row">
-                <button type="button" onClick={() => setReactions((reactions) => ({ ...reactions, laughs: reactions.laughs + 1 }))}>
+                <button type="button" onClick={() => addReaction('laughs')}>
                   Laughs {reactions.laughs}
                 </button>
-                <button type="button" onClick={() => setReactions((reactions) => ({ ...reactions, chaos: reactions.chaos + 1 }))}>
+                <button type="button" onClick={() => addReaction('chaos')}>
                   Chaos {reactions.chaos}
                 </button>
-                <button type="button" onClick={() => setReactions((reactions) => ({ ...reactions, skip: reactions.skip + 1 }))}>
+                <button type="button" onClick={() => addReaction('skip')}>
                   Skip {reactions.skip}
                 </button>
               </div>
