@@ -30,6 +30,11 @@ VITE_FIREBASE_APP_ID=your_app_id
 
 For Vercel, add the same variables in Project Settings -> Environment Variables.
 
+If the Game Room badge says `Offline`, check the message below it:
+
+- `Failed to get document because the client is offline.` usually means the browser/network cannot reach Firestore, Firestore Database is not created, or the Firebase project/env values do not match. The app enables Firestore long-polling auto detection to help on restricted networks.
+- `Missing or insufficient permissions` means your Firestore rules are blocking reads/writes.
+
 ## Firestore Rules For Testing
 
 For a small friends-only test, you can start with open room rules:

@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app'
-import { getFirestore } from 'firebase/firestore'
+import { initializeFirestore } from 'firebase/firestore'
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -13,4 +13,8 @@ const firebaseConfig = {
 export const isFirebaseConfigured = Object.values(firebaseConfig).every(Boolean)
 
 export const firebaseApp = isFirebaseConfigured ? initializeApp(firebaseConfig) : null
-export const db = firebaseApp ? getFirestore(firebaseApp) : null
+export const db = firebaseApp
+  ? initializeFirestore(firebaseApp, {
+      experimentalAutoDetectLongPolling: true,
+    })
+  : null
