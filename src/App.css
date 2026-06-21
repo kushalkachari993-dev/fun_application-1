@@ -515,6 +515,11 @@ nav a.active {
   --card-soft: #fff3df;
 }
 
+.room {
+  --card-accent: #2671b9;
+  --card-soft: #edf6ff;
+}
+
 .tool-page {
   position: relative;
   z-index: 1;
@@ -529,6 +534,10 @@ nav a.active {
 .secret-card,
 .mission-card,
 .play-room,
+.game-room,
+.players-panel,
+.round-board,
+.round-card,
 .game-panel {
   border: 1px solid rgba(35, 50, 58, 0.1);
   border-radius: 18px;
@@ -541,7 +550,8 @@ nav a.active {
 .date-card,
 .secret-card,
 .mission-card,
-.play-room {
+.play-room,
+.game-room {
   max-width: 760px;
   padding: clamp(24px, 4vw, 40px);
 }
@@ -1040,6 +1050,206 @@ button:hover {
   box-shadow: 0 14px 30px rgba(208, 107, 34, 0.18);
 }
 
+.game-room {
+  max-width: 1120px;
+  background:
+    linear-gradient(135deg, rgba(38, 113, 185, 0.14), transparent 28rem),
+    rgba(255, 255, 255, 0.9);
+}
+
+.room-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 0.5fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.room-hero h2 {
+  margin: 10px 0 8px;
+  color: var(--ink);
+  font-size: clamp(40px, 7vw, 78px);
+  line-height: 0.92;
+}
+
+.room-hero p,
+.round-card p {
+  color: var(--muted);
+  font-size: 18px;
+}
+
+.room-code-card {
+  padding: 20px;
+  border: 1px solid rgba(38, 113, 185, 0.16);
+  border-radius: 18px;
+  background: rgba(237, 246, 255, 0.78);
+}
+
+.room-code-card span {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.room-code-card strong {
+  display: block;
+  margin-top: 8px;
+  color: #2671b9;
+  font-size: clamp(34px, 5vw, 54px);
+  line-height: 1;
+  letter-spacing: 0.08em;
+}
+
+.room-layout {
+  display: grid;
+  grid-template-columns: 310px minmax(0, 1fr);
+  gap: 16px;
+  margin-top: 24px;
+}
+
+.players-panel,
+.round-board,
+.round-card {
+  padding: 20px;
+}
+
+.players-panel .date-topline strong {
+  color: #2671b9;
+  background: #e3f1ff;
+}
+
+.player-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.player-pill {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  padding: 10px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.player-pill span {
+  display: inline-grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  color: #fff;
+  background: #2671b9;
+  font-weight: 950;
+}
+
+.player-pill strong {
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.player-pill small {
+  color: #2671b9;
+  font-weight: 900;
+}
+
+.player-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+.player-form input {
+  min-width: 0;
+  border: 1px solid rgba(35, 50, 58, 0.12);
+  border-radius: 12px;
+  padding: 12px 13px;
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.78);
+  font: inherit;
+  font-weight: 800;
+}
+
+.player-form input:focus {
+  outline: 3px solid rgba(38, 113, 185, 0.24);
+}
+
+.player-form button,
+.room-code-card button,
+.round-card > button {
+  background: #2671b9;
+  box-shadow: 0 12px 24px rgba(38, 113, 185, 0.18);
+}
+
+.player-form button:hover,
+.room-code-card button:hover,
+.round-card > button:hover {
+  background: #1d5d99;
+}
+
+.room-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+  margin-bottom: 16px;
+}
+
+.room-tabs button {
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.78);
+  border: 1px solid rgba(35, 50, 58, 0.1);
+  box-shadow: none;
+}
+
+.room-tabs button:hover,
+.room-tabs button.active {
+  color: #fff;
+  background: #2671b9;
+  box-shadow: 0 14px 30px rgba(38, 113, 185, 0.18);
+}
+
+.round-card {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(237, 246, 255, 0.78)),
+    #fff;
+}
+
+.round-card .date-topline strong {
+  color: #2671b9;
+  background: #e3f1ff;
+}
+
+.round-card h3 {
+  margin: 18px 0;
+  color: var(--ink);
+  font-size: clamp(30px, 5vw, 58px);
+  line-height: 1.02;
+}
+
+.reaction-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 24px 0 14px;
+}
+
+.reaction-row button {
+  color: var(--ink);
+  background: #edf6ff;
+  border: 1px solid rgba(38, 113, 185, 0.16);
+  box-shadow: none;
+}
+
+.reaction-row button:hover {
+  color: #fff;
+  background: #2671b9;
+  box-shadow: 0 14px 30px rgba(38, 113, 185, 0.18);
+}
+
 .segmented-control {
   display: inline-flex;
   gap: 4px;
@@ -1147,6 +1357,8 @@ button:hover {
   .quick-stats,
   .chaos-console,
   .play-header,
+  .room-hero,
+  .room-layout,
   .friend-list,
   .emergency-grid {
     grid-template-columns: 1fr;
@@ -1169,9 +1381,19 @@ button:hover {
   }
 
   .status-row,
-  .date-topline {
+  .date-topline,
+  .player-form {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .player-form {
+    display: flex;
+  }
+
+  .player-form input,
+  .player-form button {
+    width: 100%;
   }
 
   .topbar {

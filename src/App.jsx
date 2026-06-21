@@ -215,11 +215,11 @@ const darePrompts = [
   'Talk like a news reporter for the next two minutes.',
   'Let the group choose your next profile picture for 10 minutes.',
   'Do your best celebrity introduction for yourself.',
-  'Text someone “important meeting, call you later” and refuse context.',
+  'Text someone "important meeting, call you later" and refuse context.',
 ]
 
 const likelyPrompts = [
-  'Who is most likely to say “I am coming” while still at home?',
+  'Who is most likely to say "I am coming" while still at home?',
   'Who is most likely to laugh at the wrong moment?',
   'Who is most likely to forget why they opened their phone?',
   'Who is most likely to become famous for something random?',
@@ -233,6 +233,8 @@ const wouldYouRatherPrompts = [
   ['Have your search history read aloud', 'Have your drafts read aloud'],
   ['Never eat fries again', 'Never drink cold coffee again'],
 ]
+
+const roomGames = ['Truth or Dare', "Who's Most Likely To", 'Would You Rather']
 
 const pages = [
   {
@@ -289,6 +291,12 @@ const pages = [
     description: 'Three quick party games for friends on one screen.',
     accent: 'play',
   },
+  {
+    path: '/game-room',
+    title: 'Game Room',
+    description: 'Create a room code, add friends, and run group rounds.',
+    accent: 'room',
+  },
 ]
 
 function randomItem(items, current) {
@@ -298,6 +306,24 @@ function randomItem(items, current) {
     next = items[Math.floor(Math.random() * items.length)]
   }
   return next
+}
+
+function createRoomCode() {
+  return Math.random().toString(36).slice(2, 8).toUpperCase()
+}
+
+function getInitialRoomCode() {
+  const params = new URLSearchParams(window.location.search)
+  return params.get('room')?.toUpperCase() || createRoomCode()
+}
+
+function promptForGame(game, currentPrompt) {
+  if (game === "Who's Most Likely To") return randomItem(likelyPrompts, currentPrompt)
+  if (game === 'Would You Rather') {
+    const next = randomItem(wouldYouRatherPrompts, currentPrompt)
+    return `${next[0]} or ${next[1]}?`
+  }
+  return randomItem([...truthPrompts, ...darePrompts], currentPrompt)
 }
 
 function App() {
@@ -314,6 +340,7 @@ function App() {
         <Route path="secret" element={<SecretPage />} />
         <Route path="mission-wheel" element={<MissionWheel />} />
         <Route path="play-room" element={<PlayRoom />} />
+        <Route path="game-room" element={<GameRoom />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>
@@ -791,6 +818,137 @@ function PlayRoom() {
             }
           />
         )}
+      </section>
+    </ToolPage>
+  )
+}
+
+function GameRoom() {
+  const [roomCode, setRoomCode] = useState(getInitialRoomCode)
+  const [players, setPlayers] = useState(['You', 'Best Friend'])
+  const [playerName, setPlayerName] = useState('')
+  const [game, setGame] = useState(roomGames[0])
+  const [prompt, setPrompt] = useState(promptForGame(roomGames[0], ''))
+  const [round, setRound] = useState(1)
+  const [copied, setCopied] = useState(false)
+  const [reactions, setReactions] = useState({ laughs: 0, chaos: 0, skip: 0 })
+
+  function addPlayer(event) {
+    event.preventDefault()
+    const trimmedName = playerName.trim()
+    if (!trimmedName || players.includes(trimmedName)) return
+    setPlayers([...players, trimmedName])
+    setPlayerName('')
+  }
+
+  function startNewRoom() {
+    const nextCode = createRoomCode()
+    setRoomCode(nextCode)
+    setRound(1)
+    setReactions({ laughs: 0, chaos: 0, skip: 0 })
+    window.history.replaceState(null, '', `/game-room?room=${nextCode}`)
+  }
+
+  function copyInvite() {
+    const inviteUrl = `${window.location.origin}/game-room?room=${roomCode}`
+    navigator.clipboard.writeText(inviteUrl)
+    setCopied(true)
+    window.setTimeout(() => setCopied(false), 1400)
+  }
+
+  function changeGame(nextGame) {
+    setGame(nextGame)
+    setPrompt(promptForGame(nextGame, prompt))
+    setRound(1)
+    setReactions({ laughs: 0, chaos: 0, skip: 0 })
+  }
+
+  function nextRound() {
+    setPrompt(promptForGame(game, prompt))
+    setRound((round) => round + 1)
+  }
+
+  return (
+    <ToolPage>
+      <section className="game-room">
+        <div className="room-hero">
+          <div>
+            <span className="mini-label">Common room</span>
+            <h2>Game Room</h2>
+            <p>Use one room code, gather names, pick a game, and run the same round together.</p>
+          </div>
+          <div className="room-code-card">
+            <span>Room Code</span>
+            <strong>{roomCode}</strong>
+            <div className="button-row">
+              <button type="button" onClick={copyInvite}>
+                {copied ? 'Copied Link' : 'Copy Invite'}
+              </button>
+              <button className="secondary-button" type="button" onClick={startNewRoom}>
+                New Room
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div className="room-layout">
+          <aside className="players-panel">
+            <div className="date-topline">
+              <span className="mini-label">Players</span>
+              <strong>{players.length} online</strong>
+            </div>
+            <div className="player-list">
+              {players.map((player, index) => (
+                <div className="player-pill" key={player}>
+                  <span>{player.slice(0, 1).toUpperCase()}</span>
+                  <strong>{player}</strong>
+                  {index === 0 && <small>Host</small>}
+                </div>
+              ))}
+            </div>
+            <form className="player-form" onSubmit={addPlayer}>
+              <input
+                aria-label="Friend name"
+                value={playerName}
+                onChange={(event) => setPlayerName(event.target.value)}
+                placeholder="Add friend name"
+              />
+              <button type="submit">Add</button>
+            </form>
+          </aside>
+
+          <section className="round-board">
+            <div className="room-tabs" aria-label="Game room games">
+              {roomGames.map((option) => (
+                <button className={game === option ? 'active' : ''} type="button" key={option} onClick={() => changeGame(option)}>
+                  {option}
+                </button>
+              ))}
+            </div>
+            <div className="round-card">
+              <div className="date-topline">
+                <span className="mini-label">Round {round}</span>
+                <strong>{game}</strong>
+              </div>
+              <h3>{prompt}</h3>
+              <p>Read this out loud. Everyone answers, votes, argues, laughs, then the host hits next round.</p>
+              <div className="reaction-row">
+                <button type="button" onClick={() => setReactions((reactions) => ({ ...reactions, laughs: reactions.laughs + 1 }))}>
+                  Laughs {reactions.laughs}
+                </button>
+                <button type="button" onClick={() => setReactions((reactions) => ({ ...reactions, chaos: reactions.chaos + 1 }))}>
+                  Chaos {reactions.chaos}
+                </button>
+                <button type="button" onClick={() => setReactions((reactions) => ({ ...reactions, skip: reactions.skip + 1 }))}>
+                  Skip {reactions.skip}
+                </button>
+              </div>
+              <button type="button" onClick={nextRound}>
+                Next Round
+              </button>
+            </div>
+          </section>
+        </div>
       </section>
     </ToolPage>
   )
