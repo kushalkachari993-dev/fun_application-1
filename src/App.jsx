@@ -202,6 +202,38 @@ const missions = [
   },
 ]
 
+const truthPrompts = [
+  'What is the funniest thing you have searched online recently?',
+  'Who in this group has the most dramatic reaction to small problems?',
+  'What is one message you typed but never sent?',
+  'What is your most unserious habit?',
+  'Who was your first silly crush?',
+]
+
+const darePrompts = [
+  'Send the third photo in your gallery to the group, no explanation.',
+  'Talk like a news reporter for the next two minutes.',
+  'Let the group choose your next profile picture for 10 minutes.',
+  'Do your best celebrity introduction for yourself.',
+  'Text someone “important meeting, call you later” and refuse context.',
+]
+
+const likelyPrompts = [
+  'Who is most likely to say “I am coming” while still at home?',
+  'Who is most likely to laugh at the wrong moment?',
+  'Who is most likely to forget why they opened their phone?',
+  'Who is most likely to become famous for something random?',
+  'Who is most likely to start a plan and then cancel it?',
+]
+
+const wouldYouRatherPrompts = [
+  ['Only reply with voice notes for a week', 'Only receive voice notes for a week'],
+  ['Lose your playlist', 'Lose your chat stickers'],
+  ['Always be 10 minutes late', 'Always arrive awkwardly early'],
+  ['Have your search history read aloud', 'Have your drafts read aloud'],
+  ['Never eat fries again', 'Never drink cold coffee again'],
+]
+
 const pages = [
   {
     path: '/girlfriend-meter',
@@ -251,6 +283,12 @@ const pages = [
     description: 'Spin for one tiny chaotic task to complete today.',
     accent: 'mission',
   },
+  {
+    path: '/play-room',
+    title: 'Play Room',
+    description: 'Three quick party games for friends on one screen.',
+    accent: 'play',
+  },
 ]
 
 function randomItem(items, current) {
@@ -275,6 +313,7 @@ function App() {
         <Route path="emergency-kit" element={<EmergencyKit />} />
         <Route path="secret" element={<SecretPage />} />
         <Route path="mission-wheel" element={<MissionWheel />} />
+        <Route path="play-room" element={<PlayRoom />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>
@@ -645,6 +684,129 @@ function MissionWheel() {
         </div>
       </section>
     </ToolPage>
+  )
+}
+
+function PlayRoom() {
+  const games = ['Truth or Dare', "Who's Most Likely To", 'Would You Rather']
+  const [game, setGame] = useState(games[0])
+  const [truthMode, setTruthMode] = useState('Truth')
+  const [truthPrompt, setTruthPrompt] = useState(truthPrompts[0])
+  const [darePrompt, setDarePrompt] = useState(darePrompts[0])
+  const [likelyPrompt, setLikelyPrompt] = useState(likelyPrompts[0])
+  const [ratherPrompt, setRatherPrompt] = useState(wouldYouRatherPrompts[0])
+  const [score, setScore] = useState({ chaos: 0, laughs: 0 })
+
+  function addLaugh() {
+    setScore((score) => ({ ...score, laughs: score.laughs + 1 }))
+  }
+
+  function addChaos() {
+    setScore((score) => ({ ...score, chaos: score.chaos + 1 }))
+  }
+
+  return (
+    <ToolPage>
+      <section className="play-room">
+        <div className="play-header">
+          <div>
+            <span className="mini-label">Group game zone</span>
+            <h2>Play Room</h2>
+            <p>Pass the phone, read the prompt, argue loudly, repeat responsibly.</p>
+          </div>
+          <div className="play-scoreboard" aria-label="Play room scoreboard">
+            <div>
+              <span>Laughs</span>
+              <strong>{score.laughs}</strong>
+            </div>
+            <div>
+              <span>Chaos</span>
+              <strong>{score.chaos}</strong>
+            </div>
+          </div>
+        </div>
+
+        <div className="play-tabs" aria-label="Play room games">
+          {games.map((option) => (
+            <button className={game === option ? 'active' : ''} type="button" key={option} onClick={() => setGame(option)}>
+              {option}
+            </button>
+          ))}
+        </div>
+
+        {game === 'Truth or Dare' && (
+          <GamePanel
+            label={truthMode}
+            title={truthMode === 'Truth' ? truthPrompt : darePrompt}
+            description="Choose truth or dare, then let the group judge the bravery level."
+            onPrimary={() => {
+              if (truthMode === 'Truth') {
+                setTruthPrompt(randomItem(truthPrompts, truthPrompt))
+              } else {
+                setDarePrompt(randomItem(darePrompts, darePrompt))
+              }
+              addChaos()
+            }}
+            primaryText="New Prompt"
+            extra={
+              <div className="segmented-control play-switch" aria-label="Truth or dare mode">
+                {['Truth', 'Dare'].map((option) => (
+                  <button className={truthMode === option ? 'active' : ''} type="button" key={option} onClick={() => setTruthMode(option)}>
+                    {option}
+                  </button>
+                ))}
+              </div>
+            }
+          />
+        )}
+
+        {game === "Who's Most Likely To" && (
+          <GamePanel
+            label="Vote loudly"
+            title={likelyPrompt}
+            description="Everyone points at the guilty person. The accused may defend themselves badly."
+            onPrimary={() => {
+              setLikelyPrompt(randomItem(likelyPrompts, likelyPrompt))
+              addLaugh()
+            }}
+            primaryText="Next Question"
+          />
+        )}
+
+        {game === 'Would You Rather' && (
+          <GamePanel
+            label="Pick one"
+            title={`${ratherPrompt[0]} or ${ratherPrompt[1]}?`}
+            description="No middle option. This is a democracy with unnecessary pressure."
+            onPrimary={() => {
+              setRatherPrompt(randomItem(wouldYouRatherPrompts, ratherPrompt))
+              addChaos()
+            }}
+            primaryText="Next Choice"
+            extra={
+              <div className="rather-options">
+                <button type="button" onClick={addLaugh}>{ratherPrompt[0]}</button>
+                <button type="button" onClick={addLaugh}>{ratherPrompt[1]}</button>
+              </div>
+            }
+          />
+        )}
+      </section>
+    </ToolPage>
+  )
+}
+
+function GamePanel({ label, title, description, onPrimary, primaryText, extra }) {
+  return (
+    <article className="game-panel">
+      {extra}
+      <span className="mini-label">{label}</span>
+      <h3>{title}</h3>
+      <p>{description}</p>
+      <button type="button" onClick={onPrimary}>
+        {primaryText}
+      </button>
+    </article>
   )
 }
 
