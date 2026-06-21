@@ -843,6 +843,7 @@ function GameRoom() {
   const [playerName, setPlayerName] = useState('')
   const [copied, setCopied] = useState(false)
   const [syncStatus, setSyncStatus] = useState(isFirebaseConfigured ? 'Connecting' : 'Local demo')
+  const [syncError, setSyncError] = useState('')
   const { game, players, prompt, reactions, roomCode, round } = room
 
   useEffect(() => {
@@ -861,7 +862,10 @@ function GameRoom() {
         }
         return undefined
       })
-      .catch(() => setSyncStatus('Offline'))
+      .catch((error) => {
+        setSyncStatus('Offline')
+        setSyncError(error.message)
+      })
 
     return onSnapshot(
       roomRef,
@@ -869,9 +873,13 @@ function GameRoom() {
         if (snapshot.exists()) {
           setRoom((currentRoom) => ({ ...currentRoom, ...snapshot.data() }))
           setSyncStatus('Live')
+          setSyncError('')
         }
       },
-      () => setSyncStatus('Offline'),
+      (error) => {
+        setSyncStatus('Offline')
+        setSyncError(error.message)
+      },
     )
   }, [roomCode])
 
@@ -883,7 +891,10 @@ function GameRoom() {
     setDoc(doc(db, 'rooms', roomCode), {
       ...patch,
       updatedAt: serverTimestamp(),
-    }, { merge: true }).catch(() => setSyncStatus('Offline'))
+    }, { merge: true }).catch((error) => {
+      setSyncStatus('Offline')
+      setSyncError(error.message)
+    })
   }
 
   function addPlayer(event) {
@@ -899,6 +910,7 @@ function GameRoom() {
     const nextRoom = createInitialRoom(nextCode)
     setRoom(nextRoom)
     setSyncStatus(isFirebaseConfigured ? 'Connecting' : 'Local demo')
+    setSyncError('')
     window.history.replaceState(null, '', `/game-room?room=${nextCode}`)
 
     if (isFirebaseConfigured) {
@@ -906,7 +918,10 @@ function GameRoom() {
         ...nextRoom,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
-      }).catch(() => setSyncStatus('Offline'))
+      }).catch((error) => {
+        setSyncStatus('Offline')
+        setSyncError(error.message)
+      })
     }
   }
 
@@ -953,6 +968,7 @@ function GameRoom() {
             <span className={`sync-pill ${syncStatus.toLowerCase().replace(' ', '-')}`}>
               {syncStatus === 'Live' ? 'Firebase live sync' : syncStatus}
             </span>
+            {syncError && <p className="sync-error">{syncError}</p>}
           </div>
           <div className="room-code-card">
             <span>Room Code</span>

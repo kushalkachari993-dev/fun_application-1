@@ -1103,6 +1103,18 @@ button:hover {
   background: #fff4e7;
 }
 
+.sync-error {
+  max-width: 620px;
+  margin: 10px 0 0;
+  padding: 11px 13px;
+  border: 1px solid rgba(155, 47, 63, 0.18);
+  border-radius: 12px;
+  color: #9b2f3f;
+  background: #fff0f2;
+  font-size: 14px;
+  font-weight: 850;
+}
+
 .room-code-card {
   padding: 20px;
   border: 1px solid rgba(38, 113, 185, 0.16);
