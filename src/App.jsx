@@ -8,9 +8,17 @@ import {
   Routes,
   useLocation,
 } from 'react-router-dom'
+import { Chess } from 'chess.js'
 import { doc, onSnapshot, runTransaction, serverTimestamp, setDoc } from 'firebase/firestore'
 import './App.css'
+import { ChessGame, LudoGame } from './BoardGames'
 import { db, isFirebaseConfigured } from './firebase'
+import {
+  createChessState,
+  createLudoState,
+  restoreLudo,
+  serializeLudo,
+} from './roomGameEngines'
 
 const girlfriendStatuses = [
   {
@@ -236,7 +244,8 @@ const wouldYouRatherPrompts = [
   ['Never eat fries again', 'Never drink cold coffee again'],
 ]
 
-const roomGames = ['Truth or Dare', "Who's Most Likely To", 'Would You Rather']
+const roomGames = ['Truth or Dare', "Who's Most Likely To", 'Would You Rather', 'Chess', 'Ludo']
+const promptRoomGames = roomGames.slice(0, 3)
 const playerStorageKey = 'just-for-fun-player'
 
 const pages = [
@@ -297,7 +306,7 @@ const pages = [
   {
     path: '/game-room',
     title: 'Game Room',
-    description: 'Create a room code, add friends, and run group rounds.',
+    description: 'Create a room, play party rounds, Chess, and Ludo together.',
     accent: 'room',
   },
 ]
@@ -395,6 +404,7 @@ function promptForGame(game, currentPrompt) {
     const next = randomItem(wouldYouRatherPrompts, currentPrompt)
     return `${next[0]} or ${next[1]}?`
   }
+  if (!promptRoomGames.includes(game)) return currentPrompt
   return randomItem([...truthPrompts, ...darePrompts], currentPrompt)
 }
 
@@ -1090,12 +1100,31 @@ function GameRoom() {
   }
 
   function changeGame(nextGame) {
-    mutateRoom((currentRoom) => ({
-      game: nextGame,
-      prompt: promptForGame(nextGame, currentRoom.prompt),
-      round: 1,
-      reactions: { laughs: 0, chaos: 0, skip: 0 },
-    }), { hostOnly: true })
+    mutateRoom((currentRoom) => {
+      const patch = {
+        game: nextGame,
+        prompt: promptForGame(nextGame, currentRoom.prompt),
+        round: 1,
+        reactions: { laughs: 0, chaos: 0, skip: 0 },
+      }
+
+      if (nextGame === 'Chess') {
+        patch.chess = currentRoom.chess || createChessState(
+          currentRoom.players,
+          currentRoom.hostId,
+        )
+      }
+
+      if (nextGame === 'Ludo') {
+        patch.ludo = currentRoom.ludo || createLudoState(
+          2,
+          currentRoom.players,
+          currentRoom.hostId,
+        )
+      }
+
+      return patch
+    }, { hostOnly: true })
   }
 
   function nextRound() {
@@ -1113,6 +1142,135 @@ function GameRoom() {
         [reaction]: currentRoom.reactions[reaction] + 1,
       },
     }))
+  }
+
+  function claimChessSeat(color) {
+    mutateRoom((currentRoom) => {
+      const chessState = currentRoom.chess || createChessState(
+        currentRoom.players,
+        currentRoom.hostId,
+      )
+      const seatId = chessState.seats[color]
+      if (seatId && seatId !== currentPlayer.id) return {}
+
+      return {
+        chess: {
+          ...chessState,
+          seats: {
+            ...chessState.seats,
+            [color]: seatId === currentPlayer.id ? '' : currentPlayer.id,
+          },
+        },
+      }
+    })
+  }
+
+  function moveChess(from, to) {
+    mutateRoom((currentRoom) => {
+      const chessState = currentRoom.chess || createChessState(
+        currentRoom.players,
+        currentRoom.hostId,
+      )
+      const chess = new Chess(chessState.fen)
+      const seatId = chessState.seats[chess.turn()]
+      const isSoloHost = Object.keys(currentRoom.players).length === 1
+        && currentRoom.hostId === currentPlayer.id
+      const canMove = seatId === currentPlayer.id
+        || (!seatId && currentRoom.hostId === currentPlayer.id)
+        || isSoloHost
+      if (!canMove) return {}
+
+      try {
+        const move = chess.move({ from, to, promotion: 'q' })
+        return {
+          chess: {
+            ...chessState,
+            fen: chess.fen(),
+            lastMove: {
+              from: move.from,
+              to: move.to,
+              san: move.san,
+            },
+          },
+        }
+      } catch {
+        return {}
+      }
+    })
+  }
+
+  function resetChess() {
+    mutateRoom((currentRoom) => ({
+      chess: createChessState(currentRoom.players, currentRoom.hostId),
+    }), { hostOnly: true })
+  }
+
+  function claimLudoSeat(color) {
+    mutateRoom((currentRoom) => {
+      const ludoState = currentRoom.ludo || createLudoState(
+        2,
+        currentRoom.players,
+        currentRoom.hostId,
+      )
+      const seatId = ludoState.seats[color]
+      if (seatId && seatId !== currentPlayer.id) return {}
+
+      return {
+        ludo: {
+          ...ludoState,
+          seats: {
+            ...ludoState.seats,
+            [color]: seatId === currentPlayer.id ? '' : currentPlayer.id,
+          },
+        },
+      }
+    })
+  }
+
+  function rollLudoDice() {
+    mutateRoom((currentRoom) => {
+      const ludoState = currentRoom.ludo || createLudoState(
+        2,
+        currentRoom.players,
+        currentRoom.hostId,
+      )
+      const seatId = ludoState.seats[ludoState.turn]
+      const isSoloHost = Object.keys(currentRoom.players).length === 1
+        && currentRoom.hostId === currentPlayer.id
+      const canRoll = seatId === currentPlayer.id
+        || (!seatId && currentRoom.hostId === currentPlayer.id)
+        || isSoloHost
+      if (!canRoll || ludoState.gameState !== 'playerHasToRollADice') return {}
+
+      const ludo = restoreLudo(ludoState)
+      ludo.rollDiceForCurrentPiece()
+      return { ludo: serializeLudo(ludo, ludoState.seats) }
+    })
+  }
+
+  function moveLudoToken(tokenIndex) {
+    mutateRoom((currentRoom) => {
+      const ludoState = currentRoom.ludo
+      if (!ludoState) return {}
+
+      const seatId = ludoState.seats[ludoState.turn]
+      const isSoloHost = Object.keys(currentRoom.players).length === 1
+        && currentRoom.hostId === currentPlayer.id
+      const canMove = seatId === currentPlayer.id
+        || (!seatId && currentRoom.hostId === currentPlayer.id)
+        || isSoloHost
+      if (!canMove || !ludoState.validTokenIndices.includes(tokenIndex)) return {}
+
+      const ludo = restoreLudo(ludoState)
+      ludo.selectToken(tokenIndex)
+      return { ludo: serializeLudo(ludo, ludoState.seats) }
+    })
+  }
+
+  function resetLudo(playerCount) {
+    mutateRoom((currentRoom) => ({
+      ludo: createLudoState(playerCount, currentRoom.players, currentRoom.hostId),
+    }), { hostOnly: true })
   }
 
   function editPlayer() {
@@ -1178,7 +1336,7 @@ function GameRoom() {
           <div>
             <span className="mini-label">Common room</span>
             <h2>The Party Board</h2>
-            <p>One shared prompt, real players, and enough reactions to ruin everyone's concentration.</p>
+            <p>Party prompts, proper board games, real players, and enough reactions to ruin everyone's concentration.</p>
             <span className={`sync-pill ${syncStatus.toLowerCase().replace(' ', '-')}`}>
               {syncStatus === 'Live' ? 'Firebase live sync' : syncStatus}
             </span>
@@ -1249,28 +1407,55 @@ function GameRoom() {
                 </button>
               ))}
             </div>
-            <div className="round-card">
-              <div className="date-topline">
-                <span className="mini-label">Round {round}</span>
-                <strong>{game}</strong>
+            {game === 'Chess' && room.chess && (
+              <ChessGame
+                chessState={room.chess}
+                currentPlayerId={currentPlayer.id}
+                hostId={room.hostId}
+                players={players}
+                canReset={canControlRoom}
+                onClaimSeat={claimChessSeat}
+                onMove={moveChess}
+                onReset={resetChess}
+              />
+            )}
+            {game === 'Ludo' && room.ludo && (
+              <LudoGame
+                currentPlayerId={currentPlayer.id}
+                hostId={room.hostId}
+                ludoState={room.ludo}
+                players={players}
+                canReset={canControlRoom}
+                onClaimSeat={claimLudoSeat}
+                onMoveToken={moveLudoToken}
+                onReset={resetLudo}
+                onRoll={rollLudoDice}
+              />
+            )}
+            {promptRoomGames.includes(game) && (
+              <div className="round-card">
+                <div className="date-topline">
+                  <span className="mini-label">Round {round}</span>
+                  <strong>{game}</strong>
+                </div>
+                <h3>{prompt}</h3>
+                <p>Read this out loud. Everyone answers, votes, argues, laughs, then the host hits next round.</p>
+                <div className="reaction-row">
+                  <button type="button" onClick={() => addReaction('laughs')}>
+                    Laughs {reactions.laughs}
+                  </button>
+                  <button type="button" onClick={() => addReaction('chaos')}>
+                    Chaos {reactions.chaos}
+                  </button>
+                  <button type="button" onClick={() => addReaction('skip')}>
+                    Skip {reactions.skip}
+                  </button>
+                </div>
+                <button type="button" disabled={!canControlRoom} onClick={nextRound}>
+                  {canControlRoom ? 'Next Round' : 'Waiting for Host'}
+                </button>
               </div>
-              <h3>{prompt}</h3>
-              <p>Read this out loud. Everyone answers, votes, argues, laughs, then the host hits next round.</p>
-              <div className="reaction-row">
-                <button type="button" onClick={() => addReaction('laughs')}>
-                  Laughs {reactions.laughs}
-                </button>
-                <button type="button" onClick={() => addReaction('chaos')}>
-                  Chaos {reactions.chaos}
-                </button>
-                <button type="button" onClick={() => addReaction('skip')}>
-                  Skip {reactions.skip}
-                </button>
-              </div>
-              <button type="button" disabled={!canControlRoom} onClick={nextRound}>
-                {canControlRoom ? 'Next Round' : 'Waiting for Host'}
-              </button>
-            </div>
+            )}
           </section>
         </div>
       </section>

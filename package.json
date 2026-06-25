@@ -10,6 +10,8 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@ayshrj/ludo.js": "^1.0.10",
+    "chess.js": "^1.4.0",
     "firebase": "^12.15.0",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
