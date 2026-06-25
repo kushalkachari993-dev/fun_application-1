@@ -1051,10 +1051,93 @@ button:hover {
 }
 
 .game-room {
-  max-width: 1120px;
-  background:
-    linear-gradient(135deg, rgba(38, 113, 185, 0.14), transparent 28rem),
-    rgba(255, 255, 255, 0.9);
+  max-width: 1180px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.room-lobby {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(320px, 0.8fr);
+  gap: clamp(28px, 6vw, 76px);
+  align-items: center;
+  min-height: 560px;
+}
+
+.lobby-copy h2 {
+  max-width: 720px;
+  margin: 14px 0 18px;
+  color: var(--ink);
+  font-size: clamp(48px, 8vw, 96px);
+  line-height: 0.9;
+}
+
+.lobby-copy > p {
+  max-width: 650px;
+  color: var(--muted);
+  font-size: clamp(18px, 2.2vw, 24px);
+}
+
+.lobby-note {
+  display: grid;
+  gap: 3px;
+  margin-top: 30px;
+  padding-left: 16px;
+  border-left: 4px solid #2671b9;
+}
+
+.lobby-note strong {
+  color: var(--ink);
+}
+
+.lobby-note span {
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.join-room-form {
+  display: grid;
+  gap: 15px;
+  padding: clamp(22px, 4vw, 34px);
+  border: 1px solid rgba(38, 113, 185, 0.16);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.88);
+  box-shadow: 0 24px 70px rgba(35, 50, 58, 0.1);
+}
+
+.join-room-form label {
+  display: grid;
+  gap: 7px;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.join-room-form input {
+  width: 100%;
+  border: 1px solid rgba(35, 50, 58, 0.14);
+  border-radius: 8px;
+  padding: 14px 15px;
+  color: var(--ink);
+  background: #fff;
+  font: inherit;
+  font-weight: 850;
+  text-transform: none;
+}
+
+.join-room-form label:nth-child(2) input {
+  color: #2671b9;
+  font-size: 22px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.join-room-form input:focus {
+  outline: 3px solid rgba(38, 113, 185, 0.2);
+  border-color: #2671b9;
 }
 
 .room-hero {
@@ -1062,6 +1145,13 @@ button:hover {
   grid-template-columns: minmax(0, 1fr) minmax(260px, 0.5fr);
   gap: 18px;
   align-items: start;
+  padding: clamp(24px, 4vw, 42px);
+  border: 1px solid rgba(35, 50, 58, 0.1);
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, rgba(38, 113, 185, 0.14), transparent 28rem),
+    rgba(255, 255, 255, 0.9);
+  box-shadow: 0 24px 70px rgba(35, 50, 58, 0.1);
 }
 
 .room-hero h2 {
@@ -1093,6 +1183,12 @@ button:hover {
   background: #e5f3ee;
 }
 
+.sync-pill.saving,
+.sync-pill.reconnecting {
+  color: #9a6630;
+  background: #fff4e7;
+}
+
 .sync-pill.offline {
   color: #9b2f3f;
   background: #fff0f2;
@@ -1118,7 +1214,7 @@ button:hover {
 .room-code-card {
   padding: 20px;
   border: 1px solid rgba(38, 113, 185, 0.16);
-  border-radius: 18px;
+  border-radius: 8px;
   background: rgba(237, 246, 255, 0.78);
 }
 
@@ -1152,6 +1248,19 @@ button:hover {
   padding: 20px;
 }
 
+.players-panel,
+.round-card {
+  border-radius: 8px;
+}
+
+.round-board {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
 .players-panel .date-topline strong {
   color: #2671b9;
   background: #e3f1ff;
@@ -1169,7 +1278,8 @@ button:hover {
   gap: 10px;
   align-items: center;
   padding: 10px;
-  border-radius: 14px;
+  border: 1px solid rgba(35, 50, 58, 0.08);
+  border-radius: 8px;
   background: rgba(255, 255, 255, 0.72);
 }
 
@@ -1185,6 +1295,7 @@ button:hover {
 }
 
 .player-pill strong {
+  display: block;
   color: var(--ink);
   overflow-wrap: anywhere;
 }
@@ -1192,6 +1303,30 @@ button:hover {
 .player-pill small {
   color: #2671b9;
   font-weight: 900;
+}
+
+.player-pill div small {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.player-pill div small.online {
+  color: #2f7d4c;
+}
+
+.empty-player-list,
+.host-note {
+  margin: 14px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.switch-room-button {
+  width: 100%;
+  margin-top: 18px;
 }
 
 .player-form {
@@ -1250,6 +1385,23 @@ button:hover {
   box-shadow: 0 14px 30px rgba(38, 113, 185, 0.18);
 }
 
+.room-tabs button:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+.room-tabs button:disabled:hover {
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.78);
+  box-shadow: none;
+  transform: none;
+}
+
+.room-tabs button.active:disabled {
+  color: #fff;
+  background: #2671b9;
+}
+
 .round-card {
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(237, 246, 255, 0.78)),
@@ -1286,6 +1438,18 @@ button:hover {
   color: #fff;
   background: #2671b9;
   box-shadow: 0 14px 30px rgba(38, 113, 185, 0.18);
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+  transform: none;
+  box-shadow: none;
+}
+
+button:disabled:hover {
+  transform: none;
+  box-shadow: none;
 }
 
 .segmented-control {
@@ -1395,6 +1559,7 @@ button:hover {
   .quick-stats,
   .chaos-console,
   .play-header,
+  .room-lobby,
   .room-hero,
   .room-layout,
   .friend-list,
@@ -1434,14 +1599,50 @@ button:hover {
     width: 100%;
   }
 
+  .room-hero {
+    padding: 22px;
+  }
+
+  .room-code-card .button-row button {
+    flex: 1 1 140px;
+  }
+
   .topbar {
-    position: static;
+    position: sticky;
+    gap: 10px;
+    padding: 12px 16px;
+  }
+
+  .topbar-actions {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    width: 100%;
+    gap: 8px;
+  }
+
+  nav {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding: 3px 0 5px;
+    scrollbar-width: none;
+  }
+
+  nav::-webkit-scrollbar {
+    display: none;
+  }
+
+  nav a {
+    flex: 0 0 auto;
+    white-space: nowrap;
   }
 
   .burst-badge {
-    left: 16px;
-    right: 16px;
-    text-align: center;
+    left: auto;
+    right: 12px;
+    max-width: 180px;
+    padding: 10px 12px;
+    font-size: 11px;
+    text-align: left;
   }
 
   .chaos-alert {

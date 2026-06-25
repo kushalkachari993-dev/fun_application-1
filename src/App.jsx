@@ -8,7 +8,7 @@ import {
   Routes,
   useLocation,
 } from 'react-router-dom'
-import { doc, getDoc, onSnapshot, serverTimestamp, setDoc } from 'firebase/firestore'
+import { doc, onSnapshot, runTransaction, serverTimestamp, setDoc } from 'firebase/firestore'
 import './App.css'
 import { db, isFirebaseConfigured } from './firebase'
 
@@ -237,6 +237,7 @@ const wouldYouRatherPrompts = [
 ]
 
 const roomGames = ['Truth or Dare', "Who's Most Likely To", 'Would You Rather']
+const playerStorageKey = 'just-for-fun-player'
 
 const pages = [
   {
@@ -314,21 +315,77 @@ function createRoomCode() {
   return Math.random().toString(36).slice(2, 8).toUpperCase()
 }
 
-function getInitialRoomCode() {
-  const params = new URLSearchParams(window.location.search)
-  return params.get('room')?.toUpperCase() || createRoomCode()
+function sanitizeRoomCode(value) {
+  return value.replace(/[^a-z0-9]/gi, '').slice(0, 6).toUpperCase()
 }
 
-function createInitialRoom(roomCode) {
+function getInitialRoomCode() {
+  const params = new URLSearchParams(window.location.search)
+  return sanitizeRoomCode(params.get('room') || '') || createRoomCode()
+}
+
+function getStoredPlayer() {
+  try {
+    const storedPlayer = JSON.parse(window.localStorage.getItem(playerStorageKey))
+    if (storedPlayer?.id) {
+      return {
+        id: storedPlayer.id,
+        name: typeof storedPlayer.name === 'string' ? storedPlayer.name : '',
+      }
+    }
+  } catch {
+    // A fresh local identity is enough if saved data is unavailable.
+  }
+
+  const id = window.crypto?.randomUUID?.() || Math.random().toString(36).slice(2)
+  return { id, name: '' }
+}
+
+function savePlayer(player) {
+  window.localStorage.setItem(playerStorageKey, JSON.stringify(player))
+}
+
+function createInitialRoom(roomCode, player = null) {
   const game = roomGames[0]
+  const now = Date.now()
 
   return {
     roomCode,
-    players: ['You'],
+    hostId: player?.id || '',
+    players: player
+      ? {
+          [player.id]: {
+            name: player.name,
+            joinedAt: now,
+            lastSeen: now,
+          },
+        }
+      : {},
     game,
     prompt: promptForGame(game, ''),
     round: 1,
     reactions: { laughs: 0, chaos: 0, skip: 0 },
+  }
+}
+
+function normalizeRoom(data, roomCode) {
+  const fallback = createInitialRoom(roomCode)
+  let players = {}
+
+  if (!Array.isArray(data?.players) && data?.players && typeof data.players === 'object') {
+    players = data.players
+  }
+
+  return {
+    ...fallback,
+    ...data,
+    roomCode,
+    players,
+    hostId: data?.hostId || Object.keys(players)[0] || '',
+    reactions: {
+      ...fallback.reactions,
+      ...data?.reactions,
+    },
   }
 }
 
@@ -839,122 +896,279 @@ function PlayRoom() {
 }
 
 function GameRoom() {
-  const [room, setRoom] = useState(() => createInitialRoom(getInitialRoomCode()))
-  const [playerName, setPlayerName] = useState('')
+  const [currentPlayer, setCurrentPlayer] = useState(getStoredPlayer)
+  const [room, setRoom] = useState(() => createInitialRoom(
+    getInitialRoomCode(),
+    currentPlayer.name ? currentPlayer : null,
+  ))
+  const [hasJoined, setHasJoined] = useState(Boolean(currentPlayer.name))
+  const [joinName, setJoinName] = useState(currentPlayer.name)
+  const [joinCode, setJoinCode] = useState(room.roomCode)
   const [copied, setCopied] = useState(false)
   const [syncStatus, setSyncStatus] = useState(isFirebaseConfigured ? 'Connecting' : 'Local demo')
   const [syncError, setSyncError] = useState('')
+  const [presenceNow, setPresenceNow] = useState(Date.now)
   const { game, players, prompt, reactions, roomCode, round } = room
+  const playerEntries = Object.entries(players).sort(([firstId], [secondId]) => {
+    if (firstId === room.hostId) return -1
+    if (secondId === room.hostId) return 1
+    return 0
+  })
+  const onlineCount = playerEntries.filter(([, player]) => (
+    presenceNow - (player.lastSeen || 0) < 120000
+  )).length
+  const isHost = room.hostId === currentPlayer.id
+  const hostPlayer = players[room.hostId]
+  const hostIsAway = !hostPlayer || presenceNow - (hostPlayer.lastSeen || 0) >= 120000
+  const canControlRoom = isHost || hostIsAway
 
   useEffect(() => {
-    if (!isFirebaseConfigured) return undefined
+    if (!hasJoined) return undefined
+    const presenceTimer = window.setInterval(() => setPresenceNow(Date.now()), 30000)
+    return () => window.clearInterval(presenceTimer)
+  }, [hasJoined])
+
+  useEffect(() => {
+    if (!hasJoined || !isFirebaseConfigured) return undefined
 
     const roomRef = doc(db, 'rooms', roomCode)
+    let heartbeatId
+    let cancelled = false
 
-    getDoc(roomRef)
-      .then((snapshot) => {
-        if (!snapshot.exists()) {
-          return setDoc(roomRef, {
-            ...createInitialRoom(roomCode),
-            createdAt: serverTimestamp(),
+    runTransaction(db, async (transaction) => {
+      const snapshot = await transaction.get(roomRef)
+      const now = Date.now()
+
+      if (!snapshot.exists()) {
+        const nextRoom = createInitialRoom(roomCode, currentPlayer)
+        transaction.set(roomRef, {
+          ...nextRoom,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        })
+      } else {
+        const currentRoom = normalizeRoom(snapshot.data(), roomCode)
+        const existingPlayer = currentRoom.players[currentPlayer.id]
+        const currentHost = currentRoom.players[currentRoom.hostId]
+        const shouldClaimHost = !currentHost || now - (currentHost.lastSeen || 0) >= 120000
+
+        transaction.set(roomRef, {
+          roomCode,
+          hostId: shouldClaimHost ? currentPlayer.id : currentRoom.hostId,
+          players: {
+            ...currentRoom.players,
+            [currentPlayer.id]: {
+              name: currentPlayer.name,
+              joinedAt: existingPlayer?.joinedAt || now,
+              lastSeen: now,
+            },
+          },
+          updatedAt: serverTimestamp(),
+        }, { merge: true })
+      }
+    })
+      .then(() => {
+        if (cancelled) return
+        heartbeatId = window.setInterval(() => {
+          setDoc(roomRef, {
+            players: {
+              [currentPlayer.id]: {
+                name: currentPlayer.name,
+                lastSeen: Date.now(),
+              },
+            },
             updatedAt: serverTimestamp(),
+          }, { merge: true }).catch(() => {
+            setSyncStatus('Reconnecting')
           })
-        }
-        return undefined
+        }, 45000)
       })
       .catch((error) => {
         setSyncStatus('Offline')
         setSyncError(error.message)
       })
 
-    return onSnapshot(
+    const unsubscribe = onSnapshot(
       roomRef,
+      { includeMetadataChanges: true },
       (snapshot) => {
-        if (snapshot.exists()) {
-          setRoom((currentRoom) => ({ ...currentRoom, ...snapshot.data() }))
-          setSyncStatus('Live')
-          setSyncError('')
+        if (!snapshot.exists()) {
+          return
         }
+        setRoom(normalizeRoom(snapshot.data(), roomCode))
+        setSyncStatus(snapshot.metadata.fromCache ? 'Reconnecting' : 'Live')
+        setSyncError('')
       },
       (error) => {
         setSyncStatus('Offline')
         setSyncError(error.message)
       },
     )
-  }, [roomCode])
 
-  function patchRoom(patch) {
-    setRoom((currentRoom) => ({ ...currentRoom, ...patch }))
+    return () => {
+      cancelled = true
+      unsubscribe()
+      window.clearInterval(heartbeatId)
+    }
+  }, [currentPlayer, hasJoined, roomCode])
 
-    if (!isFirebaseConfigured) return
+  function mutateRoom(createPatch, { hostOnly = false } = {}) {
+    if (hostOnly && !canControlRoom) return
 
-    setDoc(doc(db, 'rooms', roomCode), {
-      ...patch,
-      updatedAt: serverTimestamp(),
-    }, { merge: true }).catch((error) => {
+    if (!isFirebaseConfigured) {
+      setRoom((currentRoom) => ({
+        ...currentRoom,
+        hostId: hostOnly && currentRoom.hostId !== currentPlayer.id
+          ? currentPlayer.id
+          : currentRoom.hostId,
+        ...createPatch(currentRoom),
+      }))
+      return
+    }
+
+    setSyncStatus('Saving')
+    runTransaction(db, async (transaction) => {
+      const roomRef = doc(db, 'rooms', roomCode)
+      const snapshot = await transaction.get(roomRef)
+      if (!snapshot.exists()) throw new Error('This room no longer exists.')
+
+      const currentRoom = normalizeRoom(snapshot.data(), roomCode)
+      const currentHost = currentRoom.players[currentRoom.hostId]
+      const currentHostIsAway = !currentHost || Date.now() - (currentHost.lastSeen || 0) >= 120000
+      if (hostOnly && currentRoom.hostId !== currentPlayer.id && !currentHostIsAway) return
+
+      transaction.set(roomRef, {
+        ...(hostOnly && currentRoom.hostId !== currentPlayer.id
+          ? { hostId: currentPlayer.id }
+          : {}),
+        ...createPatch(currentRoom),
+        updatedAt: serverTimestamp(),
+      }, { merge: true })
+    }).catch((error) => {
       setSyncStatus('Offline')
       setSyncError(error.message)
     })
   }
 
-  function addPlayer(event) {
+  function joinRoom(event) {
     event.preventDefault()
-    const trimmedName = playerName.trim()
-    if (!trimmedName || players.includes(trimmedName)) return
-    patchRoom({ players: [...players, trimmedName] })
-    setPlayerName('')
+    const name = joinName.trim().slice(0, 24)
+    const code = sanitizeRoomCode(joinCode)
+    if (!name || code.length < 4) return
+
+    const nextPlayer = { ...currentPlayer, name }
+    savePlayer(nextPlayer)
+    setCurrentPlayer(nextPlayer)
+    setRoom(createInitialRoom(code, nextPlayer))
+    setPresenceNow(Date.now())
+    setJoinCode(code)
+    setHasJoined(true)
+    setSyncStatus(isFirebaseConfigured ? 'Connecting' : 'Local demo')
+    setSyncError('')
+    window.history.replaceState(null, '', `/game-room?room=${code}`)
   }
 
   function startNewRoom() {
     const nextCode = createRoomCode()
-    const nextRoom = createInitialRoom(nextCode)
+    const nextRoom = createInitialRoom(nextCode, currentPlayer)
     setRoom(nextRoom)
+    setJoinCode(nextCode)
     setSyncStatus(isFirebaseConfigured ? 'Connecting' : 'Local demo')
     setSyncError('')
     window.history.replaceState(null, '', `/game-room?room=${nextCode}`)
+  }
 
-    if (isFirebaseConfigured) {
-      setDoc(doc(db, 'rooms', nextCode), {
-        ...nextRoom,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      }).catch((error) => {
-        setSyncStatus('Offline')
-        setSyncError(error.message)
-      })
+  async function copyInvite() {
+    const inviteUrl = `${window.location.origin}/game-room?room=${roomCode}`
+    try {
+      await navigator.clipboard.writeText(inviteUrl)
+      setCopied(true)
+      window.setTimeout(() => setCopied(false), 1400)
+    } catch {
+      setSyncError('Could not copy the link. Copy it from the browser address bar.')
     }
   }
 
-  function copyInvite() {
-    const inviteUrl = `${window.location.origin}/game-room?room=${roomCode}`
-    navigator.clipboard.writeText(inviteUrl)
-    setCopied(true)
-    window.setTimeout(() => setCopied(false), 1400)
-  }
-
   function changeGame(nextGame) {
-    patchRoom({
+    mutateRoom((currentRoom) => ({
       game: nextGame,
-      prompt: promptForGame(nextGame, prompt),
+      prompt: promptForGame(nextGame, currentRoom.prompt),
       round: 1,
       reactions: { laughs: 0, chaos: 0, skip: 0 },
-    })
+    }), { hostOnly: true })
   }
 
   function nextRound() {
-    patchRoom({
-      prompt: promptForGame(game, prompt),
-      round: round + 1,
-    })
+    mutateRoom((currentRoom) => ({
+      prompt: promptForGame(currentRoom.game, currentRoom.prompt),
+      round: currentRoom.round + 1,
+      reactions: { laughs: 0, chaos: 0, skip: 0 },
+    }), { hostOnly: true })
   }
 
   function addReaction(reaction) {
-    patchRoom({
+    mutateRoom((currentRoom) => ({
       reactions: {
-        ...reactions,
-        [reaction]: reactions[reaction] + 1,
+        ...currentRoom.reactions,
+        [reaction]: currentRoom.reactions[reaction] + 1,
       },
-    })
+    }))
+  }
+
+  function editPlayer() {
+    setJoinName(currentPlayer.name)
+    setJoinCode(roomCode)
+    setHasJoined(false)
+  }
+
+  if (!hasJoined) {
+    return (
+      <ToolPage>
+        <section className="game-room room-lobby">
+          <div className="lobby-copy">
+            <span className="mini-label">Multiplayer lobby</span>
+            <h2>Enter the chaos.</h2>
+            <p>Pick a name and join with a room code. Each friend should open the invite on their own phone.</p>
+            <div className="lobby-note">
+              <strong>No account needed</strong>
+              <span>Your name is remembered only in this browser.</span>
+            </div>
+          </div>
+          <form className="join-room-form" onSubmit={joinRoom}>
+            <label>
+              Your name
+              <input
+                autoFocus
+                maxLength="24"
+                value={joinName}
+                onChange={(event) => setJoinName(event.target.value)}
+                placeholder="Kushal"
+              />
+            </label>
+            <label>
+              Room code
+              <input
+                inputMode="text"
+                maxLength="6"
+                value={joinCode}
+                onChange={(event) => setJoinCode(sanitizeRoomCode(event.target.value))}
+                placeholder="ABC123"
+              />
+            </label>
+            <button type="submit" disabled={!joinName.trim() || joinCode.length < 4}>
+              Join Room
+            </button>
+            <button
+              className="secondary-button"
+              type="button"
+              onClick={() => setJoinCode(createRoomCode())}
+            >
+              Generate New Code
+            </button>
+          </form>
+        </section>
+      </ToolPage>
+    )
   }
 
   return (
@@ -963,8 +1177,8 @@ function GameRoom() {
         <div className="room-hero">
           <div>
             <span className="mini-label">Common room</span>
-            <h2>Game Room</h2>
-            <p>Use one room code, gather names, pick a game, and run the same round together.</p>
+            <h2>The Party Board</h2>
+            <p>One shared prompt, real players, and enough reactions to ruin everyone's concentration.</p>
             <span className={`sync-pill ${syncStatus.toLowerCase().replace(' ', '-')}`}>
               {syncStatus === 'Live' ? 'Firebase live sync' : syncStatus}
             </span>
@@ -988,32 +1202,49 @@ function GameRoom() {
           <aside className="players-panel">
             <div className="date-topline">
               <span className="mini-label">Players</span>
-              <strong>{players.length} online</strong>
+              <strong>{onlineCount} online</strong>
             </div>
             <div className="player-list">
-              {players.map((player, index) => (
-                <div className="player-pill" key={player}>
-                  <span>{player.slice(0, 1).toUpperCase()}</span>
-                  <strong>{player}</strong>
-                  {index === 0 && <small>Host</small>}
-                </div>
-              ))}
+              {playerEntries.map(([playerId, player]) => {
+                const isOnline = presenceNow - (player.lastSeen || 0) < 120000
+                return (
+                  <div className="player-pill" key={playerId}>
+                    <span>{player.name.slice(0, 1).toUpperCase()}</span>
+                    <div>
+                      <strong>{player.name}</strong>
+                      <small className={isOnline ? 'online' : ''}>
+                        {playerId === currentPlayer.id ? 'You' : isOnline ? 'Online' : 'Away'}
+                      </small>
+                    </div>
+                    {playerId === room.hostId && <small>Host</small>}
+                  </div>
+                )
+              })}
+              {playerEntries.length === 0 && (
+                <p className="empty-player-list">Waiting for players to join.</p>
+              )}
             </div>
-            <form className="player-form" onSubmit={addPlayer}>
-              <input
-                aria-label="Friend name"
-                value={playerName}
-                onChange={(event) => setPlayerName(event.target.value)}
-                placeholder="Add friend name"
-              />
-              <button type="submit">Add</button>
-            </form>
+            <button className="secondary-button switch-room-button" type="button" onClick={editPlayer}>
+              Switch room or name
+            </button>
+            {!isHost && !hostIsAway && (
+              <p className="host-note">The host controls the game and moves everyone to the next round.</p>
+            )}
+            {!isHost && hostIsAway && (
+              <p className="host-note">The host is away. Your next game action will make you the new host.</p>
+            )}
           </aside>
 
           <section className="round-board">
             <div className="room-tabs" aria-label="Game room games">
               {roomGames.map((option) => (
-                <button className={game === option ? 'active' : ''} type="button" key={option} onClick={() => changeGame(option)}>
+                <button
+                  className={game === option ? 'active' : ''}
+                  type="button"
+                  key={option}
+                  disabled={!canControlRoom}
+                  onClick={() => changeGame(option)}
+                >
                   {option}
                 </button>
               ))}
@@ -1036,8 +1267,8 @@ function GameRoom() {
                   Skip {reactions.skip}
                 </button>
               </div>
-              <button type="button" onClick={nextRound}>
-                Next Round
+              <button type="button" disabled={!canControlRoom} onClick={nextRound}>
+                {canControlRoom ? 'Next Round' : 'Waiting for Host'}
               </button>
             </div>
           </section>
