@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Chess } from 'chess.js'
+import { Dice5, RotateCcw } from 'lucide-react'
 import { chessStatus, restoreLudo } from './roomGameEngines'
 
 const chessPieces = {
@@ -88,6 +89,7 @@ export function ChessGame({
           <h3>{chessStatus(chess)}</h3>
         </div>
         <button className="secondary-button" type="button" disabled={!canReset} onClick={onReset}>
+          <RotateCcw size={16} />
           Reset board
         </button>
       </div>
@@ -293,6 +295,7 @@ export function LudoGame({
           disabled={!canPlayTurn || ludoState.gameState !== 'playerHasToRollADice'}
           onClick={onRoll}
         >
+          <Dice5 size={17} />
           Roll Dice
         </button>
       </div>

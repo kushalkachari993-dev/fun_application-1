@@ -10,7 +10,35 @@ import {
 } from 'react-router-dom'
 import { Chess } from 'chess.js'
 import { doc, onSnapshot, runTransaction, serverTimestamp, setDoc } from 'firebase/firestore'
+import {
+  Activity,
+  ArrowRight,
+  BarChart3,
+  Check,
+  ChevronRight,
+  Copy,
+  Dice5,
+  Gamepad2,
+  HeartPulse,
+  Home as HomeIcon,
+  Laugh,
+  LockKeyhole,
+  Menu,
+  MessageCircleHeart,
+  PartyPopper,
+  Plus,
+  RefreshCw,
+  RotateCcw,
+  ShieldAlert,
+  Sparkles,
+  Target,
+  Users,
+  WandSparkles,
+  X,
+  Zap,
+} from 'lucide-react'
 import './App.css'
+import './polish.css'
 import { ChessGame, LudoGame } from './BoardGames'
 import { db, isFirebaseConfigured } from './firebase'
 import {
@@ -254,60 +282,70 @@ const pages = [
     title: 'Girlfriend Happiness Meter',
     description: 'A very official mood detector with zero scientific backing.',
     accent: 'meter',
+    icon: HeartPulse,
   },
   {
     path: '/friendship-tracker',
     title: 'Friendship Level Tracker',
     description: 'Fake stats for real friends with suspicious reply times.',
     accent: 'friends',
+    icon: BarChart3,
   },
   {
     path: '/apology-generator',
     title: 'Apology Generator',
     description: 'Emergency sorry messages for emotional damage control.',
     accent: 'apology',
+    icon: MessageCircleHeart,
   },
   {
     path: '/compliment-generator',
     title: 'Compliment Generator',
     description: 'Sweet lines for girlfriend mode and friendship mode.',
     accent: 'compliment',
+    icon: Sparkles,
   },
   {
     path: '/date-spinner',
     title: 'Date Plan Spinner',
     description: 'Random cute plans for when both of you say "you decide."',
     accent: 'date',
+    icon: Dice5,
   },
   {
     path: '/emergency-kit',
     title: 'Girlfriend Emergency Kit',
     description: 'Fake survival plans for very real relationship weather.',
     accent: 'emergency',
+    icon: ShieldAlert,
   },
   {
     path: '/secret',
     title: 'Secret Page',
     description: 'A tiny hidden corner for one cute message.',
     accent: 'secret',
+    icon: LockKeyhole,
   },
   {
     path: '/mission-wheel',
     title: 'Mission Wheel',
     description: 'Spin for one tiny chaotic task to complete today.',
     accent: 'mission',
+    icon: Target,
   },
   {
     path: '/play-room',
     title: 'Play Room',
     description: 'Three quick party games for friends on one screen.',
     accent: 'play',
+    icon: PartyPopper,
   },
   {
     path: '/game-room',
     title: 'Game Room',
     description: 'Create a room, play party rounds, Chess, and Ludo together.',
     accent: 'room',
+    icon: Gamepad2,
   },
 ]
 
@@ -433,8 +471,12 @@ function Layout() {
   const location = useLocation()
   const isHome = location.pathname === '/'
   const [funMode, setFunMode] = useState(false)
+  const [navOpen, setNavOpen] = useState(false)
   const [burst, setBurst] = useState(funBursts[0])
   const [alert, setAlert] = useState(chaosAlerts[0])
+  const currentPage = pages.find((page) => page.path === location.pathname)
+  const relationshipPages = pages.slice(0, 8)
+  const playPages = pages.slice(8)
 
   function toggleFunMode() {
     setFunMode(!funMode)
@@ -445,55 +487,119 @@ function Layout() {
   return (
     <main className={`app-shell ${funMode ? 'fun-mode' : ''}`}>
       <FloatingStickers />
-      <header className="topbar">
-        <Link className="brand" to="/">
-          <span className="brand-mark">JF</span>
-          <span>Just For Fun HQ</span>
-        </Link>
-        <div className="topbar-actions">
-          <nav aria-label="Main pages">
-            {pages.map((page) => (
-              <NavLink key={page.path} to={page.path}>
-                {page.title.replace(' Generator', '').replace(' Tracker', '')}
-              </NavLink>
-            ))}
-          </nav>
-          <button className="fun-toggle" type="button" onClick={toggleFunMode}>
-            {funMode ? 'Chaos Mode On' : 'Chaos Mode'}
+      <button
+        className={`sidebar-scrim ${navOpen ? 'visible' : ''}`}
+        type="button"
+        aria-label="Close navigation"
+        onClick={() => setNavOpen(false)}
+      />
+      <aside className={`app-sidebar ${navOpen ? 'open' : ''}`}>
+        <div className="sidebar-header">
+          <Link className="brand" to="/" onClick={() => setNavOpen(false)}>
+            <span className="brand-mark"><Sparkles size={19} /></span>
+            <span>
+              <strong>Just For Fun</strong>
+              <small>Relationship HQ</small>
+            </span>
+          </Link>
+          <button className="icon-button sidebar-close" type="button" aria-label="Close navigation" onClick={() => setNavOpen(false)}>
+            <X size={19} />
           </button>
         </div>
-      </header>
-      {funMode && (
-        <div className="chaos-alert" aria-live="polite">
-          {alert}
-        </div>
-      )}
-      <button
-        className="burst-badge"
-        type="button"
-        onClick={() => {
-          setBurst(randomItem(funBursts, burst))
-          setAlert(randomItem(chaosAlerts, alert))
-        }}
-      >
-        {burst}
-      </button>
 
-      <section className={isHome ? 'hero home-hero' : 'hero compact-hero'}>
-        <div>
-          <p className="eyebrow">Relationship Control Room</p>
-          <h1>{isHome ? 'Relationship HQ for girlfriend and friends' : currentPageTitle(location.pathname)}</h1>
-          <p>
-            {isHome
-              ? 'A fake-serious dashboard for compliments, apologies, friendship stats, and girlfriend happiness checks.'
-              : currentPageDescription(location.pathname)}
-          </p>
-        </div>
-        {isHome && <HeroPreview />}
-      </section>
-      {isHome && <ChaosConsole active={funMode} />}
+        <nav className="sidebar-nav" aria-label="Main pages">
+          <NavLink end to="/" onClick={() => setNavOpen(false)}>
+            <HomeIcon size={18} />
+            <span>Overview</span>
+          </NavLink>
+          <span className="nav-section-label">Relationship tools</span>
+          {relationshipPages.map((page) => {
+            const Icon = page.icon
+            return (
+              <NavLink key={page.path} to={page.path} onClick={() => setNavOpen(false)}>
+                <Icon size={18} />
+                <span>{page.title.replace(' Generator', '').replace(' Tracker', '')}</span>
+              </NavLink>
+            )
+          })}
+          <span className="nav-section-label">Play together</span>
+          {playPages.map((page) => {
+            const Icon = page.icon
+            return (
+              <NavLink key={page.path} to={page.path} onClick={() => setNavOpen(false)}>
+                <Icon size={18} />
+                <span>{page.title}</span>
+              </NavLink>
+            )
+          })}
+        </nav>
 
-      <Outlet />
+        <div className="sidebar-footer">
+          <div className="sidebar-status">
+            <span className="status-dot" />
+            <div>
+              <strong>HQ operational</strong>
+              <small>All systems unserious</small>
+            </div>
+          </div>
+          <button className={`chaos-control ${funMode ? 'active' : ''}`} type="button" onClick={toggleFunMode}>
+            <Zap size={17} />
+            <span>{funMode ? 'Chaos enabled' : 'Enable chaos'}</span>
+          </button>
+        </div>
+      </aside>
+
+      <div className="app-workspace">
+        <header className="workspace-bar">
+          <div className="workspace-context">
+            <button className="icon-button mobile-menu" type="button" aria-label="Open navigation" onClick={() => setNavOpen(true)}>
+              <Menu size={20} />
+            </button>
+            <div>
+              <span>{isHome ? 'Workspace' : currentPage?.accent === 'play' || currentPage?.accent === 'room' ? 'Play together' : 'Relationship tools'}</span>
+              <strong>{isHome ? 'Overview' : currentPageTitle(location.pathname)}</strong>
+            </div>
+          </div>
+          <button className={`header-chaos ${funMode ? 'active' : ''}`} type="button" onClick={toggleFunMode}>
+            <Zap size={16} />
+            <span>{funMode ? 'Chaos on' : 'Chaos mode'}</span>
+          </button>
+        </header>
+
+        {funMode && (
+          <div className="chaos-alert" aria-live="polite">
+            <Zap size={17} />
+            <span>{alert}</span>
+          </div>
+        )}
+        <button
+          className="burst-badge"
+          type="button"
+          onClick={() => {
+            setBurst(randomItem(funBursts, burst))
+            setAlert(randomItem(chaosAlerts, alert))
+          }}
+        >
+          <Sparkles size={15} />
+          <span>{burst}</span>
+        </button>
+
+        <section className={isHome ? 'hero home-hero' : 'hero compact-hero'}>
+          <div>
+            <p className="eyebrow">{isHome ? 'Relationship control room' : currentPage?.title}</p>
+            <h1>{isHome ? 'Your shared fun dashboard' : currentPageTitle(location.pathname)}</h1>
+            <p>
+              {isHome
+                ? 'Quick tools, group games, and delightfully unnecessary relationship analytics in one place.'
+                : currentPageDescription(location.pathname)}
+            </p>
+          </div>
+          {isHome && <HeroPreview />}
+        </section>
+        {isHome && <ChaosConsole active={funMode} />}
+
+        <Outlet />
+      </div>
     </main>
   )
 }
@@ -514,30 +620,36 @@ function Home() {
     <>
       <section className="quick-stats" aria-label="Fake dashboard stats">
         <div>
+          <span className="stat-icon danger"><Activity size={18} /></span>
           <span>Drama risk</span>
           <strong>12%</strong>
         </div>
         <div>
+          <span className="stat-icon success"><Check size={18} /></span>
           <span>Snack readiness</span>
           <strong>98%</strong>
         </div>
         <div>
+          <span className="stat-icon info"><Zap size={18} /></span>
           <span>Reply speed</span>
           <strong>Maybe</strong>
         </div>
       </section>
 
       <div className="page-grid">
-        {pages.map((page, index) => (
+        {pages.map((page) => {
+          const Icon = page.icon
+          return (
           <Link className={`feature-card ${page.accent}`} key={page.path} to={page.path}>
             <div className="feature-topline">
-              <span className="feature-number">{String(index + 1).padStart(2, '0')}</span>
-              <strong>Open</strong>
+              <span className="feature-number"><Icon size={20} /></span>
+              <ChevronRight size={19} />
             </div>
             <span>{page.title}</span>
             <p>{page.description}</p>
           </Link>
-        ))}
+          )
+        })}
       </div>
     </>
   )
@@ -567,19 +679,19 @@ function HeroPreview() {
   return (
     <aside className="hero-preview" aria-label="Dashboard preview">
       <div className="preview-header">
-        <span>Today</span>
-        <strong>HQ Online</strong>
+        <span>Live snapshot</span>
+        <strong><span className="status-dot" /> HQ online</strong>
       </div>
       <div className="preview-meter">
         <div />
       </div>
       <div className="preview-grid">
         <div>
-          <span>Compliments</span>
+          <span><Sparkles size={14} /> Compliments</span>
           <strong>Ready</strong>
         </div>
         <div>
-          <span>Apology</span>
+          <span><MessageCircleHeart size={14} /> Apology</span>
           <strong>Armed</strong>
         </div>
       </div>
@@ -612,14 +724,16 @@ function GirlfriendMeter() {
         </div>
         <div className="button-row">
           <button type="button" onClick={() => setStatusIndex((statusIndex + 1) % girlfriendStatuses.length)}>
-            Scan Again
+            <RefreshCw size={17} />
+            Scan again
           </button>
           <button
             className="secondary-button"
             type="button"
             onClick={() => setStatusIndex(Math.floor(Math.random() * girlfriendStatuses.length))}
           >
-            Random Mood
+            <Dice5 size={17} />
+            Random mood
           </button>
         </div>
       </div>
@@ -651,7 +765,8 @@ function FriendshipTracker() {
               ))}
             </div>
             <button type="button" onClick={() => setBoostedFriend(friend.name)}>
-              Boost Loyalty
+              <Zap size={17} />
+              Boost loyalty
             </button>
           </article>
         ))}
@@ -691,7 +806,8 @@ function DateSpinner() {
           ))}
         </ol>
         <button type="button" onClick={() => setPlan(randomItem(datePlans, plan))}>
-          Spin Plan
+          <Dice5 size={17} />
+          Spin plan
         </button>
       </section>
     </ToolPage>
@@ -754,7 +870,8 @@ function SecretPage() {
             : 'Press the button if you are girlfriend, best friend, or officially allowed to know too much.'}
         </p>
         <button type="button" onClick={() => setUnlocked(!unlocked)}>
-          {unlocked ? 'Lock Again' : 'Unlock Secret'}
+          {unlocked ? <RotateCcw size={17} /> : <LockKeyhole size={17} />}
+          {unlocked ? 'Lock again' : 'Unlock secret'}
         </button>
       </section>
     </ToolPage>
@@ -785,10 +902,12 @@ function MissionWheel() {
         </div>
         <div className="button-row">
           <button type="button" onClick={spinMission}>
-            Spin Mission
+            <RefreshCw size={17} />
+            Spin mission
           </button>
           <button className="secondary-button" type="button" onClick={() => setCompleted(!completed)}>
-            {completed ? 'Undo Done' : 'Mark Done'}
+            {completed ? <RotateCcw size={17} /> : <Check size={17} />}
+            {completed ? 'Undo done' : 'Mark done'}
           </button>
         </div>
       </section>
@@ -1314,6 +1433,7 @@ function GameRoom() {
               />
             </label>
             <button type="submit" disabled={!joinName.trim() || joinCode.length < 4}>
+              <ArrowRight size={17} />
               Join Room
             </button>
             <button
@@ -1321,6 +1441,7 @@ function GameRoom() {
               type="button"
               onClick={() => setJoinCode(createRoomCode())}
             >
+              <RefreshCw size={17} />
               Generate New Code
             </button>
           </form>
@@ -1347,9 +1468,11 @@ function GameRoom() {
             <strong>{roomCode}</strong>
             <div className="button-row">
               <button type="button" onClick={copyInvite}>
+                <Copy size={17} />
                 {copied ? 'Copied Link' : 'Copy Invite'}
               </button>
               <button className="secondary-button" type="button" onClick={startNewRoom}>
+                <Plus size={17} />
                 New Room
               </button>
             </div>
@@ -1383,6 +1506,7 @@ function GameRoom() {
               )}
             </div>
             <button className="secondary-button switch-room-button" type="button" onClick={editPlayer}>
+              <Users size={17} />
               Switch room or name
             </button>
             {!isHost && !hostIsAway && (
@@ -1442,9 +1566,11 @@ function GameRoom() {
                 <p>Read this out loud. Everyone answers, votes, argues, laughs, then the host hits next round.</p>
                 <div className="reaction-row">
                   <button type="button" onClick={() => addReaction('laughs')}>
+                    <Laugh size={16} />
                     Laughs {reactions.laughs}
                   </button>
                   <button type="button" onClick={() => addReaction('chaos')}>
+                    <Zap size={16} />
                     Chaos {reactions.chaos}
                   </button>
                   <button type="button" onClick={() => addReaction('skip')}>
@@ -1452,6 +1578,7 @@ function GameRoom() {
                   </button>
                 </div>
                 <button type="button" disabled={!canControlRoom} onClick={nextRound}>
+                  <ArrowRight size={17} />
                   {canControlRoom ? 'Next Round' : 'Waiting for Host'}
                 </button>
               </div>
@@ -1471,6 +1598,7 @@ function GamePanel({ label, title, description, onPrimary, primaryText, extra })
       <h3>{title}</h3>
       <p>{description}</p>
       <button type="button" onClick={onPrimary}>
+        <WandSparkles size={17} />
         {primaryText}
       </button>
     </article>
@@ -1534,9 +1662,11 @@ function GeneratorPage({ label, text, buttonText, onGenerate, embedded = false }
       <blockquote>{text}</blockquote>
       <div className="button-row">
         <button type="button" onClick={onGenerate}>
+          <WandSparkles size={17} />
           {buttonText}
         </button>
         <button className="secondary-button" type="button" onClick={copyText}>
+          <Copy size={17} />
           {copied ? 'Copied' : 'Copy Text'}
         </button>
       </div>

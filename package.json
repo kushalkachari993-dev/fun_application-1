@@ -13,6 +13,7 @@
     "@ayshrj/ludo.js": "^1.0.10",
     "chess.js": "^1.4.0",
     "firebase": "^12.15.0",
+    "lucide-react": "^1.21.0",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
     "react-router-dom": "^7.18.0"
