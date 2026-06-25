@@ -11,7 +11,9 @@ npm.cmd run dev
 
 ## Firebase Game Room Sync
 
-The Game Room works in local demo mode without Firebase config. With Firebase enabled, friends can join from separate devices, get their own player identity, see live presence, react at the same time, share host-controlled rounds, and play synchronized Chess or Ludo.
+The Game Room works in local demo mode without Firebase config. With Firebase enabled, friends can join from separate devices, choose avatars, ready up, chat live, keep score, save match history, and play synchronized party rounds, Chess, or Ludo.
+
+Chat is stored inside each room document and automatically capped at the latest 60 messages. Match history is capped at 12 results to keep Firestore usage predictable.
 
 1. Create a Firebase project.
 2. Add a Web App in Firebase project settings.

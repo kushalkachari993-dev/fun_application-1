@@ -32,15 +32,21 @@ import {
   ShieldAlert,
   Sparkles,
   Target,
-  Users,
   WandSparkles,
   X,
   Zap,
 } from 'lucide-react'
 import './App.css'
 import './polish.css'
+import { avatarPresets } from './avatars'
 import { ChessGame, LudoGame } from './BoardGames'
 import { db, isFirebaseConfigured } from './firebase'
+import {
+  AvatarPicker,
+  PlayerRoster,
+  RoomSocialPanel,
+  SessionControls,
+} from './PartySession'
 import {
   createChessState,
   createLudoState,
@@ -275,6 +281,8 @@ const wouldYouRatherPrompts = [
 const roomGames = ['Truth or Dare', "Who's Most Likely To", 'Would You Rather', 'Chess', 'Ludo']
 const promptRoomGames = roomGames.slice(0, 3)
 const playerStorageKey = 'just-for-fun-player'
+const chatMessageLimit = 60
+const matchHistoryLimit = 12
 
 const pages = [
   {
@@ -343,7 +351,7 @@ const pages = [
   {
     path: '/game-room',
     title: 'Game Room',
-    description: 'Create a room, play party rounds, Chess, and Ludo together.',
+    description: 'Create a live party room with chat, scores, Chess, and Ludo.',
     accent: 'room',
     icon: Gamepad2,
   },
@@ -378,6 +386,7 @@ function getStoredPlayer() {
       return {
         id: storedPlayer.id,
         name: typeof storedPlayer.name === 'string' ? storedPlayer.name : '',
+        avatar: storedPlayer.avatar || avatarPresets[0].id,
       }
     }
   } catch {
@@ -385,7 +394,11 @@ function getStoredPlayer() {
   }
 
   const id = window.crypto?.randomUUID?.() || Math.random().toString(36).slice(2)
-  return { id, name: '' }
+  return {
+    id,
+    name: '',
+    avatar: avatarPresets[Math.abs(id.charCodeAt(0) || 0) % avatarPresets.length].id,
+  }
 }
 
 function savePlayer(player) {
@@ -403,6 +416,9 @@ function createInitialRoom(roomCode, player = null) {
       ? {
           [player.id]: {
             name: player.name,
+            avatar: player.avatar || avatarPresets[0].id,
+            ready: false,
+            points: 0,
             joinedAt: now,
             lastSeen: now,
           },
@@ -412,7 +428,39 @@ function createInitialRoom(roomCode, player = null) {
     prompt: promptForGame(game, ''),
     round: 1,
     reactions: { laughs: 0, chaos: 0, skip: 0 },
+    session: createInitialSession(),
+    messages: [],
+    history: [],
   }
+}
+
+function createInitialSession() {
+  return {
+    status: 'lobby',
+    matchId: '',
+    game: '',
+    scores: {},
+    winnerIds: [],
+    startedAt: 0,
+    endedAt: 0,
+  }
+}
+
+function createEventId() {
+  return window.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`
+}
+
+function systemMessage(text) {
+  return {
+    id: createEventId(),
+    system: true,
+    text,
+    createdAt: Date.now(),
+  }
+}
+
+function appendMessages(messages, ...nextMessages) {
+  return [...(messages || []), ...nextMessages].slice(-chatMessageLimit)
 }
 
 function normalizeRoom(data, roomCode) {
@@ -420,7 +468,19 @@ function normalizeRoom(data, roomCode) {
   let players = {}
 
   if (!Array.isArray(data?.players) && data?.players && typeof data.players === 'object') {
-    players = data.players
+    players = Object.fromEntries(
+      Object.entries(data.players).map(([playerId, player]) => [
+        playerId,
+        {
+          name: player.name || 'Player',
+          avatar: player.avatar || avatarPresets[0].id,
+          ready: Boolean(player.ready),
+          points: Number(player.points) || 0,
+          joinedAt: player.joinedAt || 0,
+          lastSeen: player.lastSeen || 0,
+        },
+      ]),
+    )
   }
 
   return {
@@ -433,6 +493,14 @@ function normalizeRoom(data, roomCode) {
       ...fallback.reactions,
       ...data?.reactions,
     },
+    session: {
+      ...fallback.session,
+      ...data?.session,
+      scores: data?.session?.scores || {},
+      winnerIds: data?.session?.winnerIds || [],
+    },
+    messages: Array.isArray(data?.messages) ? data.messages.slice(-chatMessageLimit) : [],
+    history: Array.isArray(data?.history) ? data.history.slice(-matchHistoryLimit) : [],
   }
 }
 
@@ -444,6 +512,75 @@ function promptForGame(game, currentPrompt) {
   }
   if (!promptRoomGames.includes(game)) return currentPrompt
   return randomItem([...truthPrompts, ...darePrompts], currentPrompt)
+}
+
+function freshGamePatch(room) {
+  if (room.game === 'Chess') {
+    return {
+      chess: createChessState(room.players, room.hostId),
+    }
+  }
+
+  if (room.game === 'Ludo') {
+    return {
+      ludo: createLudoState(
+        room.ludo?.players?.length || Math.min(4, Math.max(2, Object.keys(room.players).length)),
+        room.players,
+        room.hostId,
+      ),
+    }
+  }
+
+  return {
+    prompt: promptForGame(room.game, room.prompt),
+    round: 1,
+    reactions: { laughs: 0, chaos: 0, skip: 0 },
+  }
+}
+
+function finishMatchPatch(room, winnerIds, scores = room.session.scores) {
+  const endedAt = Date.now()
+  const uniqueWinnerIds = [...new Set(winnerIds.filter(Boolean))]
+  const playerNames = Object.fromEntries(
+    Object.entries(room.players).map(([playerId, player]) => [playerId, player.name]),
+  )
+  const nextPlayers = Object.fromEntries(
+    Object.entries(room.players).map(([playerId, player]) => [
+      playerId,
+      {
+        ...player,
+        points: (player.points || 0)
+          + (scores[playerId] || 0)
+          + (uniqueWinnerIds.includes(playerId) ? 3 : 0),
+        ready: false,
+      },
+    ]),
+  )
+  const winnerText = uniqueWinnerIds.length
+    ? `${uniqueWinnerIds.map((playerId) => playerNames[playerId]).join(' & ')} won ${room.session.game || room.game}.`
+    : `${room.session.game || room.game} ended without a declared winner.`
+  const match = {
+    id: room.session.matchId || createEventId(),
+    game: room.session.game || room.game,
+    scores,
+    winnerIds: uniqueWinnerIds,
+    playerNames,
+    startedAt: room.session.startedAt || endedAt,
+    endedAt,
+  }
+
+  return {
+    players: nextPlayers,
+    session: {
+      ...room.session,
+      status: 'finished',
+      scores,
+      winnerIds: uniqueWinnerIds,
+      endedAt,
+    },
+    history: [...(room.history || []), match].slice(-matchHistoryLimit),
+    messages: appendMessages(room.messages, systemMessage(winnerText)),
+  }
 }
 
 function App() {
@@ -1032,24 +1169,33 @@ function GameRoom() {
   ))
   const [hasJoined, setHasJoined] = useState(Boolean(currentPlayer.name))
   const [joinName, setJoinName] = useState(currentPlayer.name)
+  const [joinAvatar, setJoinAvatar] = useState(currentPlayer.avatar)
   const [joinCode, setJoinCode] = useState(room.roomCode)
   const [copied, setCopied] = useState(false)
   const [syncStatus, setSyncStatus] = useState(isFirebaseConfigured ? 'Connecting' : 'Local demo')
   const [syncError, setSyncError] = useState('')
   const [presenceNow, setPresenceNow] = useState(Date.now)
-  const { game, players, prompt, reactions, roomCode, round } = room
+  const { game, history, messages, players, prompt, reactions, roomCode, round, session } = room
   const playerEntries = Object.entries(players).sort(([firstId], [secondId]) => {
     if (firstId === room.hostId) return -1
     if (secondId === room.hostId) return 1
     return 0
   })
-  const onlineCount = playerEntries.filter(([, player]) => (
-    presenceNow - (player.lastSeen || 0) < 120000
-  )).length
   const isHost = room.hostId === currentPlayer.id
   const hostPlayer = players[room.hostId]
   const hostIsAway = !hostPlayer || presenceNow - (hostPlayer.lastSeen || 0) >= 120000
   const canControlRoom = isHost || hostIsAway
+  const activePlayerEntries = playerEntries.filter(([, player]) => (
+    presenceNow - (player.lastSeen || 0) < 120000
+  ))
+  const nonHostPlayers = activePlayerEntries.filter(([playerId]) => playerId !== room.hostId)
+  const allReady = nonHostPlayers.every(([, player]) => player.ready)
+  const readyCount = activePlayerEntries.filter(([playerId, player]) => (
+    playerId === room.hostId || player.ready
+  )).length
+  const winnerNames = session.winnerIds
+    .map((playerId) => players[playerId]?.name)
+    .filter(Boolean)
 
   useEffect(() => {
     if (!hasJoined) return undefined
@@ -1088,6 +1234,9 @@ function GameRoom() {
             ...currentRoom.players,
             [currentPlayer.id]: {
               name: currentPlayer.name,
+              avatar: currentPlayer.avatar,
+              ready: existingPlayer?.ready || false,
+              points: existingPlayer?.points || 0,
               joinedAt: existingPlayer?.joinedAt || now,
               lastSeen: now,
             },
@@ -1103,6 +1252,7 @@ function GameRoom() {
             players: {
               [currentPlayer.id]: {
                 name: currentPlayer.name,
+                avatar: currentPlayer.avatar,
                 lastSeen: Date.now(),
               },
             },
@@ -1185,7 +1335,7 @@ function GameRoom() {
     const code = sanitizeRoomCode(joinCode)
     if (!name || code.length < 4) return
 
-    const nextPlayer = { ...currentPlayer, name }
+    const nextPlayer = { ...currentPlayer, name, avatar: joinAvatar }
     savePlayer(nextPlayer)
     setCurrentPlayer(nextPlayer)
     setRoom(createInitialRoom(code, nextPlayer))
@@ -1219,12 +1369,21 @@ function GameRoom() {
   }
 
   function changeGame(nextGame) {
+    if (session.status === 'playing') return
+
     mutateRoom((currentRoom) => {
       const patch = {
         game: nextGame,
         prompt: promptForGame(nextGame, currentRoom.prompt),
         round: 1,
         reactions: { laughs: 0, chaos: 0, skip: 0 },
+        session: createInitialSession(),
+        players: Object.fromEntries(
+          Object.entries(currentRoom.players).map(([playerId, player]) => [
+            playerId,
+            { ...player, ready: false },
+          ]),
+        ),
       }
 
       if (nextGame === 'Chess') {
@@ -1247,6 +1406,7 @@ function GameRoom() {
   }
 
   function nextRound() {
+    if (session.status !== 'playing') return
     mutateRoom((currentRoom) => ({
       prompt: promptForGame(currentRoom.game, currentRoom.prompt),
       round: currentRoom.round + 1,
@@ -1255,6 +1415,7 @@ function GameRoom() {
   }
 
   function addReaction(reaction) {
+    if (session.status !== 'playing') return
     mutateRoom((currentRoom) => ({
       reactions: {
         ...currentRoom.reactions,
@@ -1286,6 +1447,7 @@ function GameRoom() {
 
   function moveChess(from, to) {
     mutateRoom((currentRoom) => {
+      if (currentRoom.session.status !== 'playing') return {}
       const chessState = currentRoom.chess || createChessState(
         currentRoom.players,
         currentRoom.hostId,
@@ -1301,7 +1463,7 @@ function GameRoom() {
 
       try {
         const move = chess.move({ from, to, promotion: 'q' })
-        return {
+        const patch = {
           chess: {
             ...chessState,
             fen: chess.fen(),
@@ -1312,6 +1474,20 @@ function GameRoom() {
             },
           },
         }
+        if (chess.isGameOver()) {
+          const winnerId = chess.isCheckmate()
+            ? chessState.seats[chess.turn() === 'w' ? 'b' : 'w']
+            : ''
+          return {
+            ...patch,
+            ...finishMatchPatch(
+              currentRoom,
+              winnerId ? [winnerId] : [],
+              winnerId ? { ...currentRoom.session.scores, [winnerId]: 3 } : currentRoom.session.scores,
+            ),
+          }
+        }
+        return patch
       } catch {
         return {}
       }
@@ -1348,6 +1524,7 @@ function GameRoom() {
 
   function rollLudoDice() {
     mutateRoom((currentRoom) => {
+      if (currentRoom.session.status !== 'playing') return {}
       const ludoState = currentRoom.ludo || createLudoState(
         2,
         currentRoom.players,
@@ -1369,6 +1546,7 @@ function GameRoom() {
 
   function moveLudoToken(tokenIndex) {
     mutateRoom((currentRoom) => {
+      if (currentRoom.session.status !== 'playing') return {}
       const ludoState = currentRoom.ludo
       if (!ludoState) return {}
 
@@ -1382,7 +1560,20 @@ function GameRoom() {
 
       const ludo = restoreLudo(ludoState)
       ludo.selectToken(tokenIndex)
-      return { ludo: serializeLudo(ludo, ludoState.seats) }
+      const nextLudo = serializeLudo(ludo, ludoState.seats)
+      const winnerColor = nextLudo.ranking[0]
+      const winnerId = winnerColor ? nextLudo.seats[winnerColor] : ''
+      if (winnerId) {
+        return {
+          ludo: nextLudo,
+          ...finishMatchPatch(
+            currentRoom,
+            [winnerId],
+            { ...currentRoom.session.scores, [winnerId]: 3 },
+          ),
+        }
+      }
+      return { ludo: nextLudo }
     })
   }
 
@@ -1392,8 +1583,134 @@ function GameRoom() {
     }), { hostOnly: true })
   }
 
+  function toggleReady() {
+    mutateRoom((currentRoom) => {
+      if (currentRoom.session.status !== 'lobby') return {}
+      const player = currentRoom.players[currentPlayer.id]
+      if (!player || currentPlayer.id === currentRoom.hostId) return {}
+
+      return {
+        players: {
+          ...currentRoom.players,
+          [currentPlayer.id]: {
+            ...player,
+            ready: !player.ready,
+          },
+        },
+      }
+    })
+  }
+
+  function startMatch() {
+    mutateRoom((currentRoom) => {
+      if (currentRoom.session.status !== 'lobby') return {}
+      const now = Date.now()
+      const effectiveRoom = currentRoom.hostId === currentPlayer.id
+        ? currentRoom
+        : { ...currentRoom, hostId: currentPlayer.id }
+      const activeEntries = Object.entries(currentRoom.players).filter(([, player]) => (
+        now - (player.lastSeen || 0) < 120000
+      ))
+      const waitingPlayers = activeEntries.filter(([playerId, player]) => (
+        playerId !== currentPlayer.id && !player.ready
+      ))
+      if (waitingPlayers.length > 0) return {}
+
+      const scores = Object.fromEntries(activeEntries.map(([playerId]) => [playerId, 0]))
+      const nextPlayers = Object.fromEntries(
+        Object.entries(currentRoom.players).map(([playerId, player]) => [
+          playerId,
+          { ...player, ready: false },
+        ]),
+      )
+
+      return {
+        ...freshGamePatch(effectiveRoom),
+        players: nextPlayers,
+        session: {
+          status: 'playing',
+          matchId: createEventId(),
+          game: effectiveRoom.game,
+          scores,
+          winnerIds: [],
+          startedAt: now,
+          endedAt: 0,
+        },
+        messages: appendMessages(
+          currentRoom.messages,
+          systemMessage(`${effectiveRoom.game} started. Good luck, allegedly.`),
+        ),
+      }
+    }, { hostOnly: true })
+  }
+
+  function adjustScore(playerId, amount) {
+    mutateRoom((currentRoom) => {
+      if (currentRoom.session.status !== 'playing') return {}
+      const currentScore = currentRoom.session.scores[playerId] || 0
+      return {
+        session: {
+          ...currentRoom.session,
+          scores: {
+            ...currentRoom.session.scores,
+            [playerId]: Math.min(99, Math.max(0, currentScore + amount)),
+          },
+        },
+      }
+    }, { hostOnly: true })
+  }
+
+  function endMatch() {
+    mutateRoom((currentRoom) => {
+      if (currentRoom.session.status !== 'playing') return {}
+      const scores = currentRoom.session.scores || {}
+      const highestScore = Math.max(0, ...Object.values(scores))
+      const winnerIds = highestScore > 0
+        ? Object.keys(scores).filter((playerId) => scores[playerId] === highestScore)
+        : []
+      return finishMatchPatch(currentRoom, winnerIds, scores)
+    }, { hostOnly: true })
+  }
+
+  function prepareRematch() {
+    mutateRoom((currentRoom) => {
+      if (currentRoom.session.status !== 'finished') return {}
+      return {
+        ...freshGamePatch(currentRoom),
+        players: Object.fromEntries(
+          Object.entries(currentRoom.players).map(([playerId, player]) => [
+            playerId,
+            { ...player, ready: false },
+          ]),
+        ),
+        session: createInitialSession(),
+        messages: appendMessages(
+          currentRoom.messages,
+          systemMessage(`Rematch lobby opened for ${currentRoom.game}.`),
+        ),
+      }
+    }, { hostOnly: true })
+  }
+
+  function sendChatMessage(text) {
+    const cleanText = text.trim().slice(0, 240)
+    if (!cleanText) return
+
+    mutateRoom((currentRoom) => ({
+      messages: appendMessages(currentRoom.messages, {
+        id: createEventId(),
+        playerId: currentPlayer.id,
+        name: currentPlayer.name,
+        avatar: currentPlayer.avatar,
+        text: cleanText,
+        createdAt: Date.now(),
+      }),
+    }))
+  }
+
   function editPlayer() {
     setJoinName(currentPlayer.name)
+    setJoinAvatar(currentPlayer.avatar)
     setJoinCode(roomCode)
     setHasJoined(false)
   }
@@ -1422,6 +1739,7 @@ function GameRoom() {
                 placeholder="Kushal"
               />
             </label>
+            <AvatarPicker value={joinAvatar} onChange={setJoinAvatar} />
             <label>
               Room code
               <input
@@ -1457,7 +1775,7 @@ function GameRoom() {
           <div>
             <span className="mini-label">Common room</span>
             <h2>The Party Board</h2>
-            <p>Party prompts, proper board games, real players, and enough reactions to ruin everyone's concentration.</p>
+            <p>Ready up, chat live, keep score, and run party prompts or proper board games together.</p>
             <span className={`sync-pill ${syncStatus.toLowerCase().replace(' ', '-')}`}>
               {syncStatus === 'Live' ? 'Firebase live sync' : syncStatus}
             </span>
@@ -1479,43 +1797,31 @@ function GameRoom() {
           </div>
         </div>
 
+        <SessionControls
+          allReady={allReady}
+          currentPlayer={players[currentPlayer.id]}
+          isHost={canControlRoom}
+          playerCount={activePlayerEntries.length}
+          readyCount={readyCount}
+          session={session}
+          winnerNames={winnerNames}
+          onEnd={endMatch}
+          onRematch={prepareRematch}
+          onStart={startMatch}
+          onToggleReady={toggleReady}
+        />
+
         <div className="room-layout">
-          <aside className="players-panel">
-            <div className="date-topline">
-              <span className="mini-label">Players</span>
-              <strong>{onlineCount} online</strong>
-            </div>
-            <div className="player-list">
-              {playerEntries.map(([playerId, player]) => {
-                const isOnline = presenceNow - (player.lastSeen || 0) < 120000
-                return (
-                  <div className="player-pill" key={playerId}>
-                    <span>{player.name.slice(0, 1).toUpperCase()}</span>
-                    <div>
-                      <strong>{player.name}</strong>
-                      <small className={isOnline ? 'online' : ''}>
-                        {playerId === currentPlayer.id ? 'You' : isOnline ? 'Online' : 'Away'}
-                      </small>
-                    </div>
-                    {playerId === room.hostId && <small>Host</small>}
-                  </div>
-                )
-              })}
-              {playerEntries.length === 0 && (
-                <p className="empty-player-list">Waiting for players to join.</p>
-              )}
-            </div>
-            <button className="secondary-button switch-room-button" type="button" onClick={editPlayer}>
-              <Users size={17} />
-              Switch room or name
-            </button>
-            {!isHost && !hostIsAway && (
-              <p className="host-note">The host controls the game and moves everyone to the next round.</p>
-            )}
-            {!isHost && hostIsAway && (
-              <p className="host-note">The host is away. Your next game action will make you the new host.</p>
-            )}
-          </aside>
+          <PlayerRoster
+            currentPlayerId={currentPlayer.id}
+            hostId={room.hostId}
+            isHost={canControlRoom}
+            playerEntries={playerEntries}
+            presenceNow={presenceNow}
+            session={session}
+            onAdjustScore={adjustScore}
+            onEditProfile={editPlayer}
+          />
 
           <section className="round-board">
             <div className="room-tabs" aria-label="Game room games">
@@ -1524,7 +1830,7 @@ function GameRoom() {
                   className={game === option ? 'active' : ''}
                   type="button"
                   key={option}
-                  disabled={!canControlRoom}
+                  disabled={!canControlRoom || session.status === 'playing'}
                   onClick={() => changeGame(option)}
                 >
                   {option}
@@ -1537,7 +1843,8 @@ function GameRoom() {
                 currentPlayerId={currentPlayer.id}
                 hostId={room.hostId}
                 players={players}
-                canReset={canControlRoom}
+                canReset={canControlRoom && session.status !== 'playing'}
+                matchActive={session.status === 'playing'}
                 onClaimSeat={claimChessSeat}
                 onMove={moveChess}
                 onReset={resetChess}
@@ -1549,7 +1856,8 @@ function GameRoom() {
                 hostId={room.hostId}
                 ludoState={room.ludo}
                 players={players}
-                canReset={canControlRoom}
+                canReset={canControlRoom && session.status !== 'playing'}
+                matchActive={session.status === 'playing'}
                 onClaimSeat={claimLudoSeat}
                 onMoveToken={moveLudoToken}
                 onReset={resetLudo}
@@ -1565,25 +1873,33 @@ function GameRoom() {
                 <h3>{prompt}</h3>
                 <p>Read this out loud. Everyone answers, votes, argues, laughs, then the host hits next round.</p>
                 <div className="reaction-row">
-                  <button type="button" onClick={() => addReaction('laughs')}>
+                  <button type="button" disabled={session.status !== 'playing'} onClick={() => addReaction('laughs')}>
                     <Laugh size={16} />
                     Laughs {reactions.laughs}
                   </button>
-                  <button type="button" onClick={() => addReaction('chaos')}>
+                  <button type="button" disabled={session.status !== 'playing'} onClick={() => addReaction('chaos')}>
                     <Zap size={16} />
                     Chaos {reactions.chaos}
                   </button>
-                  <button type="button" onClick={() => addReaction('skip')}>
+                  <button type="button" disabled={session.status !== 'playing'} onClick={() => addReaction('skip')}>
                     Skip {reactions.skip}
                   </button>
                 </div>
-                <button type="button" disabled={!canControlRoom} onClick={nextRound}>
+                <button type="button" disabled={!canControlRoom || session.status !== 'playing'} onClick={nextRound}>
                   <ArrowRight size={17} />
-                  {canControlRoom ? 'Next Round' : 'Waiting for Host'}
+                  {session.status !== 'playing' ? 'Start match to play' : canControlRoom ? 'Next Round' : 'Waiting for Host'}
                 </button>
               </div>
             )}
           </section>
+
+          <RoomSocialPanel
+            currentPlayerId={currentPlayer.id}
+            history={history}
+            messages={messages}
+            players={players}
+            onSendMessage={sendChatMessage}
+          />
         </div>
       </section>
     </ToolPage>

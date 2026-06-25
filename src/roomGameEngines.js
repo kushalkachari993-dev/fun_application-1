@@ -3,18 +3,22 @@ import { Chess } from 'chess.js'
 
 export const ludoColors = ['blue', 'red', 'green', 'yellow']
 
-function roomHostId(players, hostId) {
-  return hostId || Object.keys(players || {})[0] || ''
+function orderedPlayerIds(players, hostId) {
+  const ids = Object.keys(players || {})
+  return hostId
+    ? [hostId, ...ids.filter((playerId) => playerId !== hostId)]
+    : ids
 }
 
 export function createChessState(players, hostId) {
+  const playerIds = orderedPlayerIds(players, hostId)
   const chess = new Chess()
 
   return {
     fen: chess.fen(),
     seats: {
-      w: roomHostId(players, hostId),
-      b: '',
+      w: playerIds[0] || '',
+      b: playerIds[1] || '',
     },
     lastMove: null,
   }
@@ -23,9 +27,9 @@ export function createChessState(players, hostId) {
 export function createLudoState(playerCount, players, hostId) {
   const count = Math.min(4, Math.max(2, playerCount))
   const ludo = new Ludo(count)
-  const firstPlayerId = roomHostId(players, hostId)
+  const playerIds = orderedPlayerIds(players, hostId)
   const seats = Object.fromEntries(
-    ludo.players.map((color, index) => [color, index === 0 ? firstPlayerId : '']),
+    ludo.players.map((color, index) => [color, playerIds[index] || '']),
   )
 
   return serializeLudo(ludo, seats)

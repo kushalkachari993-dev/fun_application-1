@@ -39,6 +39,7 @@ export function ChessGame({
   hostId,
   players,
   canReset,
+  matchActive,
   onClaimSeat,
   onMove,
   onReset,
@@ -48,9 +49,11 @@ export function ChessGame({
   const selectedSquare = selection?.fen === chessState.fen ? selection.square : null
   const currentColor = chess.turn()
   const currentSeat = chessState.seats[currentColor]
-  const canPlayTurn = currentSeat === currentPlayerId
-    || (!currentSeat && hostId === currentPlayerId)
-    || (Object.keys(players).length === 1 && hostId === currentPlayerId)
+  const canPlayTurn = matchActive && (
+    currentSeat === currentPlayerId
+      || (!currentSeat && hostId === currentPlayerId)
+      || (Object.keys(players).length === 1 && hostId === currentPlayerId)
+  )
   const legalTargets = selectedSquare
     ? new Set(chess.moves({ square: selectedSquare, verbose: true }).map((move) => move.to))
     : new Set()
@@ -146,7 +149,7 @@ export function ChessGame({
       </div>
 
       <div className="game-footnote">
-        <span>{canPlayTurn ? 'Your move' : `Waiting for ${playerName(players, currentSeat)}`}</span>
+        <span>{!matchActive ? 'Start the match to move pieces' : canPlayTurn ? 'Your move' : `Waiting for ${playerName(players, currentSeat)}`}</span>
         <span>{chessState.lastMove ? `Last move: ${chessState.lastMove.san}` : 'Select a piece, then a highlighted square'}</span>
       </div>
     </div>
@@ -159,6 +162,7 @@ export function LudoGame({
   ludoState,
   players,
   canReset,
+  matchActive,
   onClaimSeat,
   onMoveToken,
   onReset,
@@ -166,9 +170,11 @@ export function LudoGame({
 }) {
   const ludo = restoreLudo(ludoState)
   const currentSeat = ludoState.seats[ludoState.turn]
-  const canPlayTurn = currentSeat === currentPlayerId
-    || (!currentSeat && hostId === currentPlayerId)
-    || (Object.keys(players).length === 1 && hostId === currentPlayerId)
+  const canPlayTurn = matchActive && (
+    currentSeat === currentPlayerId
+      || (!currentSeat && hostId === currentPlayerId)
+      || (Object.keys(players).length === 1 && hostId === currentPlayerId)
+  )
   const tokensBySquare = new Map()
 
   for (const color of ludoState.players) {
@@ -283,7 +289,9 @@ export function LudoGame({
         <div>
           <strong>{ludoState.boardStatus || 'Roll the dice to begin.'}</strong>
           <span>
-            {canPlayTurn
+            {!matchActive
+              ? 'Start the match to roll'
+              : canPlayTurn
               ? ludoState.gameState === 'playerHasToSelectAPosition'
                 ? 'Choose a glowing token'
                 : 'It is your turn'
