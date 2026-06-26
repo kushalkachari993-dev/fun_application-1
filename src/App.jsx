@@ -19,6 +19,7 @@ import {
   runTransaction,
   serverTimestamp,
   setDoc,
+  Timestamp,
 } from 'firebase/firestore'
 import {
   Activity,
@@ -293,10 +294,11 @@ const promptRoomGames = roomGames.slice(0, 3)
 const playerStorageKey = 'just-for-fun-player'
 const chatMessageLimit = 60
 const matchHistoryLimit = 12
+const roomLifetimeMs = 24 * 60 * 60 * 1000
 const roomSchemaVersion = 2
 const gameStateDocId = 'current'
 const gameStateKeys = ['game', 'prompt', 'round', 'reactions', 'session', 'chess', 'ludo']
-const roomMetadataKeys = ['roomCode', 'hostId']
+const roomMetadataKeys = ['roomCode', 'hostId', 'expiresAt', 'kickedPlayers']
 
 const pages = [
   {
@@ -419,13 +421,28 @@ function savePlayer(player) {
   window.localStorage.setItem(playerStorageKey, JSON.stringify(player))
 }
 
+function createRoomExpiry(now = Date.now()) {
+  return now + roomLifetimeMs
+}
+
+function ttlFields(expiresAt = createRoomExpiry()) {
+  return {
+    expiresAt,
+    expireAt: Timestamp.fromMillis(expiresAt),
+  }
+}
+
 function createInitialRoom(roomCode, player = null) {
   const game = roomGames[0]
   const now = Date.now()
+  const expiresAt = createRoomExpiry(now)
 
   return {
     roomCode,
     hostId: player?.id || '',
+    createdAt: now,
+    expiresAt,
+    kickedPlayers: {},
     players: player
       ? {
           [player.id]: {
@@ -485,6 +502,16 @@ function normalizeTime(value) {
   if (typeof value === 'number' && Number.isFinite(value)) return value
   if (value?.toMillis) return value.toMillis()
   return Number(value) || 0
+}
+
+function normalizeKickedPlayers(kickedPlayers) {
+  if (!kickedPlayers || Array.isArray(kickedPlayers) || typeof kickedPlayers !== 'object') return {}
+
+  return Object.fromEntries(
+    Object.entries(kickedPlayers)
+      .filter(([playerId]) => playerId)
+      .map(([playerId, kickedAt]) => [playerId, normalizeTime(kickedAt) || Date.now()]),
+  )
 }
 
 function normalizePlayer(player = {}) {
@@ -588,6 +615,7 @@ function applyRoomPatch(currentRoom, patch) {
   const {
     historyCreates = [],
     messageCreates = [],
+    playerDeletes = [],
     playerPatches,
     ...roomPatch
   } = patch || {}
@@ -597,6 +625,11 @@ function applyRoomPatch(currentRoom, patch) {
   }
 
   if (roomPatch.players) nextRoom.players = normalizePlayers(roomPatch.players)
+  if (playerDeletes.length) {
+    playerDeletes.forEach((playerId) => {
+      delete nextRoom.players[playerId]
+    })
+  }
   if (playerPatches) nextRoom.players = mergePlayerPatches(nextRoom.players, playerPatches)
   if (messageCreates.length) nextRoom.messages = appendMessages(currentRoom.messages, ...messageCreates)
   if (historyCreates.length) nextRoom.history = appendHistory(currentRoom.history, ...historyCreates)
@@ -607,13 +640,22 @@ function applyRoomPatch(currentRoom, patch) {
 function normalizeRoom(data, roomCode) {
   const fallback = createInitialRoom(roomCode)
   const players = normalizePlayers(data?.players)
+  const hostId = data?.hostId && (players[data.hostId] || Object.keys(players).length === 0)
+    ? data.hostId
+    : Object.keys(players)[0] || data?.hostId || ''
+  const expiresAt = normalizeTime(data?.expiresAt)
+    || normalizeTime(data?.expireAt)
+    || fallback.expiresAt
 
   return {
     ...fallback,
     ...data,
     roomCode,
     players,
-    hostId: data?.hostId || Object.keys(players)[0] || '',
+    hostId,
+    createdAt: normalizeTime(data?.createdAt) || fallback.createdAt,
+    expiresAt,
+    kickedPlayers: normalizeKickedPlayers(data?.kickedPlayers),
     reactions: {
       ...fallback.reactions,
       ...data?.reactions,
@@ -671,10 +713,13 @@ function writeRoomPatchToTransaction(transaction, roomCode, patch) {
   const gameStateRef = doc(db, 'rooms', roomCode, 'gameState', gameStateDocId)
   const roomPatch = pickFields(patch, roomMetadataKeys)
   const gameStatePatch = pickFields(patch, gameStateKeys)
+  const nextExpiresAt = normalizeTime(patch.expiresAt) || createRoomExpiry()
+  const ttl = ttlFields(nextExpiresAt)
 
   if (Object.keys(roomPatch).length > 0) {
     transaction.set(roomRef, {
       ...roomPatch,
+      ...ttl,
       updatedAt: serverTimestamp(),
     }, { merge: true })
   }
@@ -682,13 +727,17 @@ function writeRoomPatchToTransaction(transaction, roomCode, patch) {
   if (Object.keys(gameStatePatch).length > 0) {
     transaction.set(gameStateRef, {
       ...gameStatePatch,
+      expireAt: ttl.expireAt,
       updatedAt: serverTimestamp(),
     }, { merge: true })
   }
 
   if (patch.players) {
     Object.entries(normalizePlayers(patch.players)).forEach(([playerId, player]) => {
-      transaction.set(doc(db, 'rooms', roomCode, 'players', playerId), player, { merge: true })
+      transaction.set(doc(db, 'rooms', roomCode, 'players', playerId), {
+        ...player,
+        expireAt: ttl.expireAt,
+      }, { merge: true })
     })
   }
 
@@ -696,20 +745,35 @@ function writeRoomPatchToTransaction(transaction, roomCode, patch) {
     Object.entries(patch.playerPatches).forEach(([playerId, playerPatch]) => {
       const normalizedPatch = normalizePlayerPatch(playerPatch)
       if (Object.keys(normalizedPatch).length > 0) {
-        transaction.set(doc(db, 'rooms', roomCode, 'players', playerId), normalizedPatch, { merge: true })
+        transaction.set(doc(db, 'rooms', roomCode, 'players', playerId), {
+          ...normalizedPatch,
+          expireAt: ttl.expireAt,
+        }, { merge: true })
       }
+    })
+  }
+
+  if (patch.playerDeletes?.length) {
+    patch.playerDeletes.forEach((playerId) => {
+      transaction.delete(doc(db, 'rooms', roomCode, 'players', playerId))
     })
   }
 
   if (patch.messageCreates?.length) {
     patch.messageCreates.map(normalizeMessage).forEach((message) => {
-      transaction.set(doc(db, 'rooms', roomCode, 'messages', message.id), message)
+      transaction.set(doc(db, 'rooms', roomCode, 'messages', message.id), {
+        ...message,
+        expireAt: ttl.expireAt,
+      })
     })
   }
 
   if (patch.historyCreates?.length) {
     patch.historyCreates.map(normalizeMatch).forEach((match) => {
-      transaction.set(doc(db, 'rooms', roomCode, 'history', match.id), match)
+      transaction.set(doc(db, 'rooms', roomCode, 'history', match.id), {
+        ...match,
+        expireAt: ttl.expireAt,
+      })
     })
   }
 }
@@ -790,6 +854,67 @@ function finishMatchPatch(room, winnerIds, scores = room.session.scores) {
     historyCreates: [match],
     messageCreates: [systemMessage(winnerText)],
   }
+}
+
+function removePlayerFromSeats(seats, playerId) {
+  return Object.fromEntries(
+    Object.entries(seats || {}).map(([seat, seatPlayerId]) => [
+      seat,
+      seatPlayerId === playerId ? '' : seatPlayerId,
+    ]),
+  )
+}
+
+function removePlayerFromScores(scores, playerId) {
+  const nextScores = { ...(scores || {}) }
+  delete nextScores[playerId]
+  return nextScores
+}
+
+function kickPlayerPatch(room, playerId) {
+  const playerName = room.players[playerId]?.name || 'A player'
+  const nextScores = removePlayerFromScores(room.session.scores, playerId)
+  const patch = {
+    kickedPlayers: {
+      ...room.kickedPlayers,
+      [playerId]: Date.now(),
+    },
+    playerDeletes: [playerId],
+    session: {
+      ...room.session,
+      scores: nextScores,
+      winnerIds: room.session.winnerIds.filter((winnerId) => winnerId !== playerId),
+    },
+    messageCreates: [systemMessage(`${playerName} was removed from the room.`)],
+  }
+
+  if (room.chess) {
+    patch.chess = {
+      ...room.chess,
+      seats: removePlayerFromSeats(room.chess.seats, playerId),
+    }
+  }
+
+  if (room.ludo) {
+    patch.ludo = {
+      ...room.ludo,
+      seats: removePlayerFromSeats(room.ludo.seats, playerId),
+    }
+  }
+
+  return patch
+}
+
+function formatRoomExpiry(expiresAt, now = Date.now()) {
+  const remaining = (expiresAt || 0) - now
+  if (remaining <= 0) return 'Expired'
+
+  const hours = Math.floor(remaining / (60 * 60 * 1000))
+  const minutes = Math.max(1, Math.ceil((remaining % (60 * 60 * 1000)) / (60 * 1000)))
+
+  if (hours >= 24) return `${Math.round(hours / 24)}d left`
+  if (hours >= 1) return `${hours}h ${minutes}m left`
+  return `${minutes}m left`
 }
 
 function App() {
@@ -1385,6 +1510,9 @@ function GameRoom() {
   const [syncError, setSyncError] = useState('')
   const [presenceNow, setPresenceNow] = useState(Date.now)
   const { game, history, messages, players, prompt, reactions, roomCode, round, session } = room
+  const currentPlayerKicked = hasJoined && Boolean(room.kickedPlayers?.[currentPlayer.id])
+  const roomExpired = Boolean(room.expiresAt && room.expiresAt <= presenceNow)
+  const expiryLabel = formatRoomExpiry(room.expiresAt, presenceNow)
   const playerEntries = Object.entries(players).sort(([firstId], [secondId]) => {
     if (firstId === room.hostId) return -1
     if (secondId === room.hostId) return 1
@@ -1393,7 +1521,7 @@ function GameRoom() {
   const isHost = room.hostId === currentPlayer.id
   const hostPlayer = players[room.hostId]
   const hostIsAway = !hostPlayer || presenceNow - (hostPlayer.lastSeen || 0) >= 120000
-  const canControlRoom = isHost || hostIsAway
+  const canControlRoom = !currentPlayerKicked && (isHost || hostIsAway)
   const activePlayerEntries = playerEntries.filter(([, player]) => (
     presenceNow - (player.lastSeen || 0) < 120000
   ))
@@ -1413,7 +1541,7 @@ function GameRoom() {
   }, [hasJoined])
 
   useEffect(() => {
-    if (!hasJoined || !isFirebaseConfigured) return undefined
+    if (!hasJoined || !isFirebaseConfigured || currentPlayerKicked) return undefined
 
     const roomRef = doc(db, 'rooms', roomCode)
     const gameStateRef = doc(db, 'rooms', roomCode, 'gameState', gameStateDocId)
@@ -1450,15 +1578,20 @@ function GameRoom() {
       if (!snapshot.exists()) {
         const nextRoom = createInitialRoom(roomCode, currentPlayer)
         const existingPlayer = playerSnapshot.exists() ? normalizePlayer(playerSnapshot.data()) : null
+        const ttl = ttlFields(nextRoom.expiresAt)
         transaction.set(roomRef, {
           roomCode,
           hostId: currentPlayer.id,
           schemaVersion: roomSchemaVersion,
+          expiresAt: nextRoom.expiresAt,
+          expireAt: ttl.expireAt,
+          kickedPlayers: {},
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
         })
         transaction.set(gameStateRef, {
           ...createInitialGameState(nextRoom),
+          expireAt: ttl.expireAt,
           updatedAt: serverTimestamp(),
         })
         transaction.set(playerRef, {
@@ -1468,6 +1601,7 @@ function GameRoom() {
           points: existingPlayer?.points || 0,
           joinedAt: existingPlayer?.joinedAt || now,
           lastSeen: now,
+          expireAt: ttl.expireAt,
         }, { merge: true })
       } else {
         const currentRoom = roomFromFirestoreSnapshots(
@@ -1483,36 +1617,55 @@ function GameRoom() {
           ? normalizePlayer(hostSnapshot.data())
           : currentRoom.players[currentRoom.hostId]
         const shouldClaimHost = !currentHost || now - (currentHost.lastSeen || 0) >= 120000
+        const currentExpiresAt = normalizeTime(roomData.expiresAt)
+          || normalizeTime(roomData.expireAt)
+          || createRoomExpiry(now)
+        const ttl = ttlFields(currentExpiresAt)
+        if (roomData.kickedPlayers?.[currentPlayer.id]) {
+          throw new Error('You were removed from this room by the host.')
+        }
 
         transaction.set(roomRef, {
           roomCode,
           schemaVersion: roomSchemaVersion,
           hostId: shouldClaimHost ? currentPlayer.id : currentRoom.hostId,
+          expiresAt: currentExpiresAt,
+          expireAt: ttl.expireAt,
           updatedAt: serverTimestamp(),
         }, { merge: true })
 
         if (!gameStateSnapshot.exists()) {
           transaction.set(gameStateRef, {
             ...createInitialGameState(currentRoom),
+            expireAt: ttl.expireAt,
             updatedAt: serverTimestamp(),
           }, { merge: true })
         }
 
         if (shouldMigrateLegacyRoom) {
           Object.entries(normalizePlayers(roomData.players)).forEach(([playerId, player]) => {
-            transaction.set(doc(db, 'rooms', roomCode, 'players', playerId), player, { merge: true })
+            transaction.set(doc(db, 'rooms', roomCode, 'players', playerId), {
+              ...player,
+              expireAt: ttl.expireAt,
+            }, { merge: true })
           })
           ;(Array.isArray(roomData.messages) ? roomData.messages : [])
             .slice(-chatMessageLimit)
             .map(normalizeMessage)
             .forEach((message) => {
-              transaction.set(doc(db, 'rooms', roomCode, 'messages', message.id), message, { merge: true })
+              transaction.set(doc(db, 'rooms', roomCode, 'messages', message.id), {
+                ...message,
+                expireAt: ttl.expireAt,
+              }, { merge: true })
             })
           ;(Array.isArray(roomData.history) ? roomData.history : [])
             .slice(-matchHistoryLimit)
             .map(normalizeMatch)
             .forEach((match) => {
-              transaction.set(doc(db, 'rooms', roomCode, 'history', match.id), match, { merge: true })
+              transaction.set(doc(db, 'rooms', roomCode, 'history', match.id), {
+                ...match,
+                expireAt: ttl.expireAt,
+              }, { merge: true })
             })
         }
 
@@ -1523,6 +1676,7 @@ function GameRoom() {
           points: existingPlayer?.points || 0,
           joinedAt: existingPlayer?.joinedAt || now,
           lastSeen: now,
+          expireAt: ttl.expireAt,
         }, { merge: true })
       }
     })
@@ -1533,6 +1687,7 @@ function GameRoom() {
             name: currentPlayer.name,
             avatar: currentPlayer.avatar,
             lastSeen: Date.now(),
+            expireAt: ttlFields(createRoomExpiry()).expireAt,
           }, { merge: true }).catch(() => {
             setSyncStatus('Reconnecting')
           })
@@ -1641,9 +1796,10 @@ function GameRoom() {
       unsubscribers.forEach((unsubscribe) => unsubscribe())
       window.clearInterval(heartbeatId)
     }
-  }, [currentPlayer, hasJoined, roomCode])
+  }, [currentPlayer, currentPlayerKicked, hasJoined, roomCode])
 
   function mutateRoom(createPatch, { hostOnly = false } = {}) {
+    if (currentPlayerKicked) return
     if (hostOnly && !canControlRoom) return
 
     if (!isFirebaseConfigured) {
@@ -1722,6 +1878,14 @@ function GameRoom() {
     setSyncStatus(isFirebaseConfigured ? 'Connecting' : 'Local demo')
     setSyncError('')
     window.history.replaceState(null, '', `/game-room?room=${nextCode}`)
+  }
+
+  function extendRoomExpiry() {
+    const expiresAt = createRoomExpiry()
+    mutateRoom(() => ({
+      expiresAt,
+      messageCreates: [systemMessage('Room cleanup timer extended for another 24 hours.')],
+    }), { hostOnly: true })
   }
 
   async function copyInvite() {
@@ -2042,6 +2206,18 @@ function GameRoom() {
     }, { hostOnly: true })
   }
 
+  function kickPlayer(playerId) {
+    if (!canControlRoom || playerId === currentPlayer.id || playerId === room.hostId) return
+    const playerName = players[playerId]?.name || 'this player'
+    const shouldKick = window.confirm(`Remove ${playerName} from this room?`)
+    if (!shouldKick) return
+
+    mutateRoom((currentRoom) => {
+      if (!currentRoom.players[playerId] || currentRoom.hostId === playerId) return {}
+      return kickPlayerPatch(currentRoom, playerId)
+    }, { hostOnly: true })
+  }
+
   function sendChatMessage(text) {
     const cleanText = text.trim().slice(0, 240)
     if (!cleanText) return
@@ -2063,6 +2239,30 @@ function GameRoom() {
     setJoinAvatar(currentPlayer.avatar)
     setJoinCode(roomCode)
     setHasJoined(false)
+  }
+
+  if (currentPlayerKicked) {
+    return (
+      <ToolPage>
+        <section className="game-room room-lobby">
+          <div className="lobby-copy">
+            <span className="mini-label">Room access</span>
+            <h2>You were removed from this room.</h2>
+            <p>The host cleared your seat from the room. You can start a new room or choose another code.</p>
+          </div>
+          <div className="join-room-form">
+            <button type="button" onClick={startNewRoom}>
+              <Plus size={17} />
+              Start New Room
+            </button>
+            <button className="secondary-button" type="button" onClick={editPlayer}>
+              <ArrowRight size={17} />
+              Choose Another Room
+            </button>
+          </div>
+        </section>
+      </ToolPage>
+    )
   }
 
   if (!hasJoined) {
@@ -2134,6 +2334,16 @@ function GameRoom() {
           <div className="room-code-card">
             <span>Room Code</span>
             <strong>{roomCode}</strong>
+            <div className={`room-expiry-row ${roomExpired ? 'expired' : ''}`}>
+              <span>{roomExpired ? 'Expired room' : 'Cleanup timer'}</span>
+              <b>{expiryLabel}</b>
+              {canControlRoom && (
+                <button className="mini-action-button" type="button" onClick={extendRoomExpiry}>
+                  <RefreshCw size={14} />
+                  Extend
+                </button>
+              )}
+            </div>
             <div className="button-row">
               <button type="button" onClick={copyInvite}>
                 <Copy size={17} />
@@ -2171,6 +2381,7 @@ function GameRoom() {
             session={session}
             onAdjustScore={adjustScore}
             onEditProfile={editPlayer}
+            onKickPlayer={kickPlayer}
           />
 
           <section className="round-board">

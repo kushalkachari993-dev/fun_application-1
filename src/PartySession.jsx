@@ -13,6 +13,7 @@ import {
   RotateCcw,
   Send,
   Trophy,
+  UserMinus,
   UserRound,
 } from 'lucide-react'
 import { avatarPresets } from './avatars'
@@ -144,6 +145,7 @@ export function PlayerRoster({
   session,
   onAdjustScore,
   onEditProfile,
+  onKickPlayer,
 }) {
   return (
     <aside className="players-panel">
@@ -159,6 +161,7 @@ export function PlayerRoster({
         {playerEntries.map(([playerId, player]) => {
           const isOnline = presenceNow - (player.lastSeen || 0) < 120000
           const score = session.scores?.[playerId] || 0
+          const canKick = isHost && playerId !== currentPlayerId && playerId !== hostId
           return (
             <div className={`session-player ${player.ready ? 'ready' : ''}`} key={playerId}>
               <PlayerAvatar avatar={player.avatar} name={player.name} />
@@ -173,26 +176,39 @@ export function PlayerRoster({
                   {session.status === 'finished' && ` / ${player.points || 0} total XP`}
                 </small>
               </div>
-              {session.status === 'playing' && (
-                <div className="score-stepper">
-                  {isHost && (
-                    <button type="button" aria-label={`Remove point from ${player.name}`} disabled={score <= 0} onClick={() => onAdjustScore(playerId, -1)}>
-                      <Minus size={13} />
-                    </button>
-                  )}
-                  <strong>{score}</strong>
-                  {isHost && (
-                    <button type="button" aria-label={`Add point to ${player.name}`} onClick={() => onAdjustScore(playerId, 1)}>
-                      <Plus size={13} />
-                    </button>
-                  )}
-                </div>
-              )}
-              {session.status === 'lobby' && playerId !== hostId && (
-                <span className={`ready-indicator ${player.ready ? 'ready' : ''}`} title={player.ready ? 'Ready' : 'Not ready'}>
-                  {player.ready ? <Check size={13} /> : <Circle size={10} />}
-                </span>
-              )}
+              <div className="session-player-actions">
+                {session.status === 'playing' && (
+                  <div className="score-stepper">
+                    {isHost && (
+                      <button type="button" aria-label={`Remove point from ${player.name}`} disabled={score <= 0} onClick={() => onAdjustScore(playerId, -1)}>
+                        <Minus size={13} />
+                      </button>
+                    )}
+                    <strong>{score}</strong>
+                    {isHost && (
+                      <button type="button" aria-label={`Add point to ${player.name}`} onClick={() => onAdjustScore(playerId, 1)}>
+                        <Plus size={13} />
+                      </button>
+                    )}
+                  </div>
+                )}
+                {session.status === 'lobby' && playerId !== hostId && (
+                  <span className={`ready-indicator ${player.ready ? 'ready' : ''}`} title={player.ready ? 'Ready' : 'Not ready'}>
+                    {player.ready ? <Check size={13} /> : <Circle size={10} />}
+                  </span>
+                )}
+                {canKick && (
+                  <button
+                    className="kick-player-button"
+                    type="button"
+                    aria-label={`Remove ${player.name} from room`}
+                    title={`Remove ${player.name}`}
+                    onClick={() => onKickPlayer(playerId)}
+                  >
+                    <UserMinus size={13} />
+                  </button>
+                )}
+              </div>
             </div>
           )
         })}
