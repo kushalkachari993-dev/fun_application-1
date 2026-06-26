@@ -55,7 +55,21 @@ If the Game Room badge says `Offline`, check the message below it:
 
 ## Firestore Rules For Testing
 
-For a small friends-only test, you can start with open room rules:
+For a small friends-only test, publish the rules in `firestore.rules`.
+
+Firebase Console path:
+
+```txt
+Firebase Console -> Firestore Database -> Rules -> paste firestore.rules -> Publish
+```
+
+Firebase CLI option:
+
+```bash
+firebase deploy --only firestore:rules
+```
+
+The testing rules are intentionally open for the whole room tree:
 
 ```js
 rules_version = '2';
@@ -64,10 +78,10 @@ service cloud.firestore {
   match /databases/{database}/documents {
     match /rooms/{roomId} {
       allow read, write: if true;
-    }
 
-    match /rooms/{roomId}/{document=**} {
-      allow read, write: if true;
+      match /{document=**} {
+        allow read, write: if true;
+      }
     }
   }
 }

@@ -391,6 +391,18 @@ function sanitizeRoomCode(value) {
   return value.replace(/[^a-z0-9]/gi, '').slice(0, 6).toUpperCase()
 }
 
+function formatSyncError(error) {
+  const message = error?.message || String(error || '')
+  const code = error?.code || ''
+  if (code === 'permission-denied' || message.toLowerCase().includes('missing or insufficient permissions')) {
+    return 'Firebase rules are blocking this room. Open Firebase Console > Firestore Database > Rules and publish the rules from firestore.rules.'
+  }
+  if (message.toLowerCase().includes('client is offline')) {
+    return 'Firestore is unreachable. Check that the database exists and your Firebase .env values match this project.'
+  }
+  return message
+}
+
 function getInitialRoomCode() {
   const params = new URLSearchParams(window.location.search)
   return sanitizeRoomCode(params.get('room') || '') || createRoomCode()
@@ -1842,7 +1854,7 @@ function GameRoom() {
       })
       .catch((error) => {
         setSyncStatus('Offline')
-        setSyncError(error.message)
+        setSyncError(formatSyncError(error))
       })
 
     function markSnapshot(snapshot) {
@@ -1866,7 +1878,7 @@ function GameRoom() {
       },
       (error) => {
         setSyncStatus('Offline')
-        setSyncError(error.message)
+        setSyncError(formatSyncError(error))
       },
       ),
       onSnapshot(
@@ -1882,7 +1894,7 @@ function GameRoom() {
         },
         (error) => {
           setSyncStatus('Offline')
-          setSyncError(error.message)
+          setSyncError(formatSyncError(error))
         },
       ),
       onSnapshot(
@@ -1903,7 +1915,7 @@ function GameRoom() {
         },
         (error) => {
           setSyncStatus('Offline')
-          setSyncError(error.message)
+          setSyncError(formatSyncError(error))
         },
       ),
       onSnapshot(
@@ -1918,7 +1930,7 @@ function GameRoom() {
         },
         (error) => {
           setSyncStatus('Offline')
-          setSyncError(error.message)
+          setSyncError(formatSyncError(error))
         },
       ),
       onSnapshot(
@@ -1933,7 +1945,7 @@ function GameRoom() {
         },
         (error) => {
           setSyncStatus('Offline')
-          setSyncError(error.message)
+          setSyncError(formatSyncError(error))
         },
       ),
     ]
@@ -1995,7 +2007,7 @@ function GameRoom() {
       })
     }).catch((error) => {
       setSyncStatus('Offline')
-      setSyncError(error.message)
+      setSyncError(formatSyncError(error))
     })
   }
 
