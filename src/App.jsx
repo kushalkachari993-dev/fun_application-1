@@ -294,6 +294,7 @@ const promptRoomGames = roomGames.slice(0, 3)
 const playerStorageKey = 'just-for-fun-player'
 const chatMessageLimit = 60
 const matchHistoryLimit = 12
+const kickLimit = 3
 const roomLifetimeMs = 24 * 60 * 60 * 1000
 const roomSchemaVersion = 2
 const gameStateDocId = 'current'
@@ -510,8 +511,27 @@ function normalizeKickedPlayers(kickedPlayers) {
   return Object.fromEntries(
     Object.entries(kickedPlayers)
       .filter(([playerId]) => playerId)
-      .map(([playerId, kickedAt]) => [playerId, normalizeTime(kickedAt) || Date.now()]),
+      .map(([playerId, kickRecord]) => [playerId, normalizeKickRecord(kickRecord)]),
   )
+}
+
+function normalizeKickRecord(kickRecord) {
+  if (!kickRecord) return null
+
+  if (typeof kickRecord === 'object' && !kickRecord.toMillis) {
+    const count = Math.max(1, Math.min(kickLimit, Number(kickRecord.count) || 1))
+    return {
+      count,
+      lastRemovedAt: normalizeTime(kickRecord.lastRemovedAt) || Date.now(),
+      blocked: Boolean(kickRecord.blocked) || count >= kickLimit,
+    }
+  }
+
+  return {
+    count: 1,
+    lastRemovedAt: normalizeTime(kickRecord) || Date.now(),
+    blocked: false,
+  }
 }
 
 function normalizePlayer(player = {}) {
@@ -874,10 +894,20 @@ function removePlayerFromScores(scores, playerId) {
 function kickPlayerPatch(room, playerId) {
   const playerName = room.players[playerId]?.name || 'A player'
   const nextScores = removePlayerFromScores(room.session.scores, playerId)
+  const previousKick = normalizeKickRecord(room.kickedPlayers[playerId])
+  const count = Math.min(kickLimit, (previousKick?.count || 0) + 1)
+  const blocked = count >= kickLimit
+  const kickText = blocked
+    ? `${playerName} was permanently removed from the room. Strike ${count}/${kickLimit}.`
+    : `${playerName} was removed from the room. Strike ${count}/${kickLimit}.`
   const patch = {
     kickedPlayers: {
       ...room.kickedPlayers,
-      [playerId]: Date.now(),
+      [playerId]: {
+        count,
+        lastRemovedAt: Date.now(),
+        blocked,
+      },
     },
     playerDeletes: [playerId],
     session: {
@@ -885,7 +915,7 @@ function kickPlayerPatch(room, playerId) {
       scores: nextScores,
       winnerIds: room.session.winnerIds.filter((winnerId) => winnerId !== playerId),
     },
-    messageCreates: [systemMessage(`${playerName} was removed from the room.`)],
+    messageCreates: [systemMessage(kickText)],
   }
 
   if (room.chess) {
@@ -1509,8 +1539,18 @@ function GameRoom() {
   const [syncStatus, setSyncStatus] = useState(isFirebaseConfigured ? 'Connecting' : 'Local demo')
   const [syncError, setSyncError] = useState('')
   const [presenceNow, setPresenceNow] = useState(Date.now)
+  const [rejoinGraceUntil, setRejoinGraceUntil] = useState(0)
   const { game, history, messages, players, prompt, reactions, roomCode, round, session } = room
-  const currentPlayerKicked = hasJoined && Boolean(room.kickedPlayers?.[currentPlayer.id])
+  const currentKickRecord = room.kickedPlayers?.[currentPlayer.id]
+  const currentPlayerBlocked = hasJoined && Boolean(currentKickRecord?.blocked)
+  const rejoinGraceActive = rejoinGraceUntil > presenceNow
+  const currentPlayerRemoved = hasJoined
+    && Boolean(currentKickRecord)
+    && !currentPlayerBlocked
+    && !players[currentPlayer.id]
+    && !rejoinGraceActive
+  const currentPlayerLockedOut = currentPlayerBlocked || currentPlayerRemoved
+  const currentKickCount = currentKickRecord?.count || 0
   const roomExpired = Boolean(room.expiresAt && room.expiresAt <= presenceNow)
   const expiryLabel = formatRoomExpiry(room.expiresAt, presenceNow)
   const playerEntries = Object.entries(players).sort(([firstId], [secondId]) => {
@@ -1521,7 +1561,7 @@ function GameRoom() {
   const isHost = room.hostId === currentPlayer.id
   const hostPlayer = players[room.hostId]
   const hostIsAway = !hostPlayer || presenceNow - (hostPlayer.lastSeen || 0) >= 120000
-  const canControlRoom = !currentPlayerKicked && (isHost || hostIsAway)
+  const canControlRoom = !currentPlayerLockedOut && (isHost || hostIsAway)
   const activePlayerEntries = playerEntries.filter(([, player]) => (
     presenceNow - (player.lastSeen || 0) < 120000
   ))
@@ -1541,7 +1581,7 @@ function GameRoom() {
   }, [hasJoined])
 
   useEffect(() => {
-    if (!hasJoined || !isFirebaseConfigured || currentPlayerKicked) return undefined
+    if (!hasJoined || !isFirebaseConfigured || currentPlayerLockedOut) return undefined
 
     const roomRef = doc(db, 'rooms', roomCode)
     const gameStateRef = doc(db, 'rooms', roomCode, 'gameState', gameStateDocId)
@@ -1621,8 +1661,9 @@ function GameRoom() {
           || normalizeTime(roomData.expireAt)
           || createRoomExpiry(now)
         const ttl = ttlFields(currentExpiresAt)
-        if (roomData.kickedPlayers?.[currentPlayer.id]) {
-          throw new Error('You were removed from this room by the host.')
+        const currentKick = normalizeKickRecord(roomData.kickedPlayers?.[currentPlayer.id])
+        if (currentKick?.blocked) {
+          throw new Error('You were permanently removed from this room by the host.')
         }
 
         transaction.set(roomRef, {
@@ -1796,10 +1837,10 @@ function GameRoom() {
       unsubscribers.forEach((unsubscribe) => unsubscribe())
       window.clearInterval(heartbeatId)
     }
-  }, [currentPlayer, currentPlayerKicked, hasJoined, roomCode])
+  }, [currentPlayer, currentPlayerLockedOut, hasJoined, roomCode])
 
   function mutateRoom(createPatch, { hostOnly = false } = {}) {
-    if (currentPlayerKicked) return
+    if (currentPlayerLockedOut) return
     if (hostOnly && !canControlRoom) return
 
     if (!isFirebaseConfigured) {
@@ -1863,6 +1904,7 @@ function GameRoom() {
     setCurrentPlayer(nextPlayer)
     setRoom(createInitialRoom(code, nextPlayer))
     setPresenceNow(Date.now())
+    setRejoinGraceUntil(Date.now() + 5000)
     setJoinCode(code)
     setHasJoined(true)
     setSyncStatus(isFirebaseConfigured ? 'Connecting' : 'Local demo')
@@ -1875,9 +1917,20 @@ function GameRoom() {
     const nextRoom = createInitialRoom(nextCode, currentPlayer)
     setRoom(nextRoom)
     setJoinCode(nextCode)
+    setRejoinGraceUntil(0)
     setSyncStatus(isFirebaseConfigured ? 'Connecting' : 'Local demo')
     setSyncError('')
     window.history.replaceState(null, '', `/game-room?room=${nextCode}`)
+  }
+
+  function rejoinCurrentRoom() {
+    setRoom(createInitialRoom(roomCode, currentPlayer))
+    setPresenceNow(Date.now())
+    setRejoinGraceUntil(Date.now() + 5000)
+    setSyncStatus(isFirebaseConfigured ? 'Connecting' : 'Local demo')
+    setSyncError('')
+    setHasJoined(true)
+    window.history.replaceState(null, '', `/game-room?room=${roomCode}`)
   }
 
   function extendRoomExpiry() {
@@ -2209,7 +2262,12 @@ function GameRoom() {
   function kickPlayer(playerId) {
     if (!canControlRoom || playerId === currentPlayer.id || playerId === room.hostId) return
     const playerName = players[playerId]?.name || 'this player'
-    const shouldKick = window.confirm(`Remove ${playerName} from this room?`)
+    const nextStrike = Math.min(kickLimit, (room.kickedPlayers[playerId]?.count || 0) + 1)
+    const shouldKick = window.confirm(
+      nextStrike >= kickLimit
+        ? `Remove ${playerName} from this room permanently? This is strike ${nextStrike}/${kickLimit}.`
+        : `Remove ${playerName} from this room? This is strike ${nextStrike}/${kickLimit}; they can still rejoin before strike ${kickLimit}.`,
+    )
     if (!shouldKick) return
 
     mutateRoom((currentRoom) => {
@@ -2241,16 +2299,29 @@ function GameRoom() {
     setHasJoined(false)
   }
 
-  if (currentPlayerKicked) {
+  if (currentPlayerLockedOut) {
+    const isPermanent = currentPlayerBlocked
+    const strikeLabel = `Strike ${Math.min(currentKickCount, kickLimit)} of ${kickLimit}`
+
     return (
       <ToolPage>
         <section className="game-room room-lobby">
           <div className="lobby-copy">
-            <span className="mini-label">Room access</span>
-            <h2>You were removed from this room.</h2>
-            <p>The host cleared your seat from the room. You can start a new room or choose another code.</p>
+            <span className="mini-label">Room access / {strikeLabel}</span>
+            <h2>{isPermanent ? 'Permanently removed from this room.' : 'You were removed from this room.'}</h2>
+            <p>
+              {isPermanent
+                ? 'This room used all 3 removal strikes for your profile. You can start a new room or choose another code.'
+                : 'The host cleared your seat. You can rejoin this room until strike 3, when removal becomes permanent.'}
+            </p>
           </div>
           <div className="join-room-form">
+            {!isPermanent && (
+              <button type="button" onClick={rejoinCurrentRoom}>
+                <RefreshCw size={17} />
+                Rejoin Room
+              </button>
+            )}
             <button type="button" onClick={startNewRoom}>
               <Plus size={17} />
               Start New Room

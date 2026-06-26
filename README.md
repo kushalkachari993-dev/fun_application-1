@@ -25,7 +25,7 @@ rooms/{roomId}/history/{matchId}
 
 Chat queries only the latest 60 messages, and match history queries only the latest 12 results to keep Firestore usage predictable.
 
-Hosts can remove non-host players from the room. A kicked player is removed from the `players` subcollection, cleared from Chess/Ludo seats and current scores, and marked in `rooms/{roomId}.kickedPlayers` so their browser stops rejoining the same room.
+Hosts can remove non-host players from the room. Each removal adds one strike in `rooms/{roomId}.kickedPlayers`. Strike 1 and 2 remove the player from the roster but let them rejoin; strike 3 blocks that player profile from the room permanently. Kicked players are also cleared from Chess/Ludo seats and current scores.
 
 Rooms are created with a 24-hour cleanup timer. The room document stores `expiresAt` for the UI and `expireAt` as a Firestore timestamp. Player, message, game state, and history documents also receive `expireAt`, so you can later enable Firestore TTL policies for old room cleanup.
 
