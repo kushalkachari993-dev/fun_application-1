@@ -13,7 +13,17 @@ npm.cmd run dev
 
 The Game Room works in local demo mode without Firebase config. With Firebase enabled, friends can join from separate devices, choose avatars, ready up, chat live, keep score, save match history, and play synchronized party rounds, Chess, or Ludo.
 
-Chat is stored inside each room document and automatically capped at the latest 60 messages. Match history is capped at 12 results to keep Firestore usage predictable.
+Room data is split across Firestore subcollections so chat, players, game state, and match history can update independently:
+
+```txt
+rooms/{roomId}
+rooms/{roomId}/players/{playerId}
+rooms/{roomId}/messages/{messageId}
+rooms/{roomId}/gameState/current
+rooms/{roomId}/history/{matchId}
+```
+
+Chat queries only the latest 60 messages, and match history queries only the latest 12 results to keep Firestore usage predictable.
 
 1. Create a Firebase project.
 2. Add a Web App in Firebase project settings.
@@ -47,6 +57,10 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     match /rooms/{roomId} {
+      allow read, write: if true;
+    }
+
+    match /rooms/{roomId}/{document=**} {
       allow read, write: if true;
     }
   }
