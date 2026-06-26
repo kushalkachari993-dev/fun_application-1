@@ -299,7 +299,7 @@ const roomLifetimeMs = 24 * 60 * 60 * 1000
 const roomSchemaVersion = 2
 const gameStateDocId = 'current'
 const gameStateKeys = ['game', 'prompt', 'round', 'reactions', 'session', 'chess', 'ludo']
-const roomMetadataKeys = ['roomCode', 'hostId', 'expiresAt', 'kickedPlayers']
+const roomMetadataKeys = ['roomCode', 'hostId', 'expiresAt', 'kickedPlayers', 'joinRequests', 'locked']
 
 const pages = [
   {
@@ -444,6 +444,8 @@ function createInitialRoom(roomCode, player = null) {
     createdAt: now,
     expiresAt,
     kickedPlayers: {},
+    joinRequests: {},
+    locked: false,
     players: player
       ? {
           [player.id]: {
@@ -531,6 +533,46 @@ function normalizeKickRecord(kickRecord) {
     count: 1,
     lastRemovedAt: normalizeTime(kickRecord) || Date.now(),
     blocked: false,
+  }
+}
+
+function normalizeJoinRequests(joinRequests) {
+  if (!joinRequests || Array.isArray(joinRequests) || typeof joinRequests !== 'object') return {}
+
+  return Object.fromEntries(
+    Object.entries(joinRequests)
+      .filter(([playerId]) => playerId)
+      .map(([playerId, request]) => [playerId, normalizeJoinRequest(request)]),
+  )
+}
+
+function normalizeJoinRequest(request = {}) {
+  const status = ['pending', 'accepted', 'rejected', 'joined'].includes(request.status)
+    ? request.status
+    : 'pending'
+
+  return {
+    name: request.name || 'Player',
+    avatar: request.avatar || avatarPresets[0].id,
+    requestedAt: normalizeTime(request.requestedAt) || Date.now(),
+    decidedAt: normalizeTime(request.decidedAt),
+    joinedAt: normalizeTime(request.joinedAt),
+    attempts: Math.max(1, Number(request.attempts) || 1),
+    status,
+  }
+}
+
+function createJoinRequest(player, previousRequest = null) {
+  const previous = previousRequest ? normalizeJoinRequest(previousRequest) : null
+
+  return {
+    name: player.name || 'Player',
+    avatar: player.avatar || avatarPresets[0].id,
+    requestedAt: Date.now(),
+    decidedAt: 0,
+    joinedAt: 0,
+    attempts: (previous?.attempts || 0) + 1,
+    status: 'pending',
   }
 }
 
@@ -660,9 +702,7 @@ function applyRoomPatch(currentRoom, patch) {
 function normalizeRoom(data, roomCode) {
   const fallback = createInitialRoom(roomCode)
   const players = normalizePlayers(data?.players)
-  const hostId = data?.hostId && (players[data.hostId] || Object.keys(players).length === 0)
-    ? data.hostId
-    : Object.keys(players)[0] || data?.hostId || ''
+  const hostId = data?.hostId || Object.keys(players)[0] || ''
   const expiresAt = normalizeTime(data?.expiresAt)
     || normalizeTime(data?.expireAt)
     || fallback.expiresAt
@@ -676,6 +716,8 @@ function normalizeRoom(data, roomCode) {
     createdAt: normalizeTime(data?.createdAt) || fallback.createdAt,
     expiresAt,
     kickedPlayers: normalizeKickedPlayers(data?.kickedPlayers),
+    joinRequests: normalizeJoinRequests(data?.joinRequests),
+    locked: Boolean(data?.locked),
     reactions: {
       ...fallback.reactions,
       ...data?.reactions,
@@ -1542,15 +1584,27 @@ function GameRoom() {
   const [rejoinGraceUntil, setRejoinGraceUntil] = useState(0)
   const { game, history, messages, players, prompt, reactions, roomCode, round, session } = room
   const currentKickRecord = room.kickedPlayers?.[currentPlayer.id]
+  const currentJoinRequest = room.joinRequests?.[currentPlayer.id]
+  const currentPlayerIsMember = Boolean(players[currentPlayer.id])
   const currentPlayerBlocked = hasJoined && Boolean(currentKickRecord?.blocked)
   const rejoinGraceActive = rejoinGraceUntil > presenceNow
+  const currentPlayerNeedsAdmission = hasJoined
+    && !currentPlayerBlocked
+    && !currentPlayerIsMember
+    && Boolean(room.locked || currentJoinRequest)
   const currentPlayerRemoved = hasJoined
     && Boolean(currentKickRecord)
     && !currentPlayerBlocked
-    && !players[currentPlayer.id]
+    && !currentPlayerIsMember
     && !rejoinGraceActive
+    && !currentPlayerNeedsAdmission
   const currentPlayerLockedOut = currentPlayerBlocked || currentPlayerRemoved
   const currentKickCount = currentKickRecord?.count || 0
+  const pendingRequests = Object.entries(room.joinRequests || {}).filter(([playerId, request]) => (
+    request.status === 'pending'
+    && !players[playerId]
+    && !room.kickedPlayers?.[playerId]?.blocked
+  ))
   const roomExpired = Boolean(room.expiresAt && room.expiresAt <= presenceNow)
   const expiryLabel = formatRoomExpiry(room.expiresAt, presenceNow)
   const playerEntries = Object.entries(players).sort(([firstId], [secondId]) => {
@@ -1599,6 +1653,7 @@ function GameRoom() {
     )
     let heartbeatId
     let cancelled = false
+    let shouldStartHeartbeat = false
 
     runTransaction(db, async (transaction) => {
       const snapshot = await transaction.get(roomRef)
@@ -1626,6 +1681,8 @@ function GameRoom() {
           expiresAt: nextRoom.expiresAt,
           expireAt: ttl.expireAt,
           kickedPlayers: {},
+          joinRequests: {},
+          locked: false,
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
         })
@@ -1643,6 +1700,7 @@ function GameRoom() {
           lastSeen: now,
           expireAt: ttl.expireAt,
         }, { merge: true })
+        shouldStartHeartbeat = true
       } else {
         const currentRoom = roomFromFirestoreSnapshots(
           snapshot,
@@ -1665,11 +1723,58 @@ function GameRoom() {
         if (currentKick?.blocked) {
           throw new Error('You were permanently removed from this room by the host.')
         }
+        const legacyPlayers = normalizePlayers(roomData.players)
+        const joinRequests = normalizeJoinRequests(roomData.joinRequests)
+        const currentRequest = joinRequests[currentPlayer.id]
+        const isExistingMember = playerSnapshot.exists() || Boolean(legacyPlayers[currentPlayer.id])
+        const requestIsApproved = currentRequest?.status === 'accepted'
+        const shouldRequestToJoin = Boolean(roomData.locked)
+          && !isExistingMember
+          && !requestIsApproved
+          && currentRoom.hostId !== currentPlayer.id
+        const nextHostId = shouldClaimHost && !shouldRequestToJoin
+          ? currentPlayer.id
+          : currentRoom.hostId
+
+        if (shouldRequestToJoin) {
+          transaction.set(roomRef, {
+            roomCode,
+            schemaVersion: roomSchemaVersion,
+            hostId: nextHostId,
+            locked: Boolean(roomData.locked),
+            joinRequests: {
+              ...joinRequests,
+              [currentPlayer.id]: currentRequest?.status === 'pending'
+                ? {
+                    ...currentRequest,
+                    name: currentPlayer.name,
+                    avatar: currentPlayer.avatar,
+                  }
+                : createJoinRequest(currentPlayer, currentRequest),
+            },
+            expiresAt: currentExpiresAt,
+            expireAt: ttl.expireAt,
+            updatedAt: serverTimestamp(),
+          }, { merge: true })
+          return
+        }
 
         transaction.set(roomRef, {
           roomCode,
           schemaVersion: roomSchemaVersion,
-          hostId: shouldClaimHost ? currentPlayer.id : currentRoom.hostId,
+          hostId: nextHostId,
+          ...(requestIsApproved
+            ? {
+                joinRequests: {
+                  ...joinRequests,
+                  [currentPlayer.id]: {
+                    ...currentRequest,
+                    status: 'joined',
+                    joinedAt: now,
+                  },
+                },
+              }
+            : {}),
           expiresAt: currentExpiresAt,
           expireAt: ttl.expireAt,
           updatedAt: serverTimestamp(),
@@ -1719,10 +1824,11 @@ function GameRoom() {
           lastSeen: now,
           expireAt: ttl.expireAt,
         }, { merge: true })
+        shouldStartHeartbeat = true
       }
     })
       .then(() => {
-        if (cancelled) return
+        if (cancelled || !shouldStartHeartbeat) return
         heartbeatId = window.setInterval(() => {
           setDoc(playerRef, {
             name: currentPlayer.name,
@@ -1931,6 +2037,106 @@ function GameRoom() {
     setSyncError('')
     setHasJoined(true)
     window.history.replaceState(null, '', `/game-room?room=${roomCode}`)
+  }
+
+  function requestJoinAccess() {
+    if (currentPlayerBlocked || currentJoinRequest?.status === 'pending') return
+
+    mutateRoom((currentRoom) => {
+      const kick = normalizeKickRecord(currentRoom.kickedPlayers[currentPlayer.id])
+      if (kick?.blocked || currentRoom.players[currentPlayer.id]) return {}
+
+      return {
+        joinRequests: {
+          ...currentRoom.joinRequests,
+          [currentPlayer.id]: createJoinRequest(
+            currentPlayer,
+            currentRoom.joinRequests[currentPlayer.id],
+          ),
+        },
+      }
+    })
+  }
+
+  function enterApprovedRoom() {
+    if (currentJoinRequest?.status !== 'accepted' && currentJoinRequest?.status !== 'joined') return
+    setRejoinGraceUntil(Date.now() + 5000)
+
+    mutateRoom((currentRoom) => {
+      const request = currentRoom.joinRequests[currentPlayer.id]
+      if (!request || !['accepted', 'joined'].includes(request.status)) return {}
+      const now = Date.now()
+
+      return {
+        joinRequests: {
+          ...currentRoom.joinRequests,
+          [currentPlayer.id]: {
+            ...request,
+            name: currentPlayer.name,
+            avatar: currentPlayer.avatar,
+            status: 'joined',
+            joinedAt: now,
+          },
+        },
+        playerPatches: {
+          [currentPlayer.id]: {
+            name: currentPlayer.name,
+            avatar: currentPlayer.avatar,
+            ready: false,
+            points: currentRoom.players[currentPlayer.id]?.points || 0,
+            joinedAt: currentRoom.players[currentPlayer.id]?.joinedAt || now,
+            lastSeen: now,
+          },
+        },
+      }
+    })
+  }
+
+  function toggleRoomLock() {
+    mutateRoom((currentRoom) => {
+      const locked = !currentRoom.locked
+
+      return {
+        locked,
+        messageCreates: [systemMessage(locked ? 'Room locked. New players must request access.' : 'Room unlocked. Anyone with the code can join.')],
+      }
+    }, { hostOnly: true })
+  }
+
+  function acceptJoinRequest(playerId) {
+    mutateRoom((currentRoom) => {
+      const request = currentRoom.joinRequests[playerId]
+      if (!request || request.status !== 'pending' || currentRoom.kickedPlayers[playerId]?.blocked) return {}
+
+      return {
+        joinRequests: {
+          ...currentRoom.joinRequests,
+          [playerId]: {
+            ...request,
+            status: 'accepted',
+            decidedAt: Date.now(),
+          },
+        },
+      }
+    }, { hostOnly: true })
+  }
+
+  function rejectJoinRequest(playerId) {
+    mutateRoom((currentRoom) => {
+      const request = currentRoom.joinRequests[playerId]
+      if (!request || request.status !== 'pending') return {}
+
+      return {
+        joinRequests: {
+          ...currentRoom.joinRequests,
+          [playerId]: {
+            ...request,
+            status: 'rejected',
+            decidedAt: Date.now(),
+          },
+        },
+      }
+    }, { hostOnly: true })
   }
 
   function extendRoomExpiry() {
@@ -2336,6 +2542,63 @@ function GameRoom() {
     )
   }
 
+  if (currentPlayerNeedsAdmission) {
+    const requestStatus = currentJoinRequest?.status || ''
+    const pending = requestStatus === 'pending'
+    const rejected = requestStatus === 'rejected'
+    const accepted = requestStatus === 'accepted' || requestStatus === 'joined'
+    const requestTitle = accepted
+      ? 'You are approved.'
+      : pending
+        ? 'Request sent.'
+        : rejected
+          ? 'Request rejected.'
+          : 'Room is locked.'
+
+    return (
+      <ToolPage>
+        <section className="game-room room-lobby">
+          <div className="lobby-copy">
+            <span className="mini-label">Private room / {roomCode}</span>
+            <h2>{requestTitle}</h2>
+            <p>
+              {accepted
+                ? 'The host approved you. Enter the room and try to behave like a responsible chaos citizen.'
+                : pending
+                  ? 'Waiting for the host to accept your request. This is the digital version of standing outside the door.'
+                  : rejected
+                    ? 'The host rejected this request. You can try again later, unless you hit strike 3.'
+                    : 'Ask the host for permission before entering this room.'}
+            </p>
+            {syncError && <p className="sync-error">{syncError}</p>}
+          </div>
+          <div className="join-room-form">
+            {accepted && (
+              <button type="button" onClick={enterApprovedRoom}>
+                <ArrowRight size={17} />
+                Enter Room
+              </button>
+            )}
+            {!accepted && (
+              <button type="button" disabled={pending} onClick={requestJoinAccess}>
+                <LockKeyhole size={17} />
+                {pending ? 'Request Pending' : rejected ? 'Request Again' : 'Request to Join'}
+              </button>
+            )}
+            <button type="button" className="secondary-button" onClick={startNewRoom}>
+              <Plus size={17} />
+              Start New Room
+            </button>
+            <button className="secondary-button" type="button" onClick={editPlayer}>
+              <ArrowRight size={17} />
+              Choose Another Room
+            </button>
+          </div>
+        </section>
+      </ToolPage>
+    )
+  }
+
   if (!hasJoined) {
     return (
       <ToolPage>
@@ -2415,6 +2678,20 @@ function GameRoom() {
                 </button>
               )}
             </div>
+            <div className={`room-lock-row ${room.locked ? 'locked' : ''}`}>
+              <span>{room.locked ? 'Locked room' : 'Open room'}</span>
+              <b>
+                {pendingRequests.length
+                  ? `${pendingRequests.length} pending`
+                  : room.locked ? 'Requests required' : 'Code can join'}
+              </b>
+              {canControlRoom && (
+                <button className="mini-action-button" type="button" onClick={toggleRoomLock}>
+                  <LockKeyhole size={14} />
+                  {room.locked ? 'Unlock' : 'Lock'}
+                </button>
+              )}
+            </div>
             <div className="button-row">
               <button type="button" onClick={copyInvite}>
                 <Copy size={17} />
@@ -2449,10 +2726,13 @@ function GameRoom() {
             isHost={canControlRoom}
             playerEntries={playerEntries}
             presenceNow={presenceNow}
+            pendingRequests={pendingRequests}
             session={session}
             onAdjustScore={adjustScore}
+            onAcceptRequest={acceptJoinRequest}
             onEditProfile={editPlayer}
             onKickPlayer={kickPlayer}
+            onRejectRequest={rejectJoinRequest}
           />
 
           <section className="round-board">

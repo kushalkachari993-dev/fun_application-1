@@ -925,7 +925,8 @@ button:active {
   font-size: 42px;
 }
 
-.room-expiry-row {
+.room-expiry-row,
+.room-lock-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto auto;
   gap: 8px;
@@ -937,7 +938,8 @@ button:active {
   background: #fff;
 }
 
-.room-expiry-row span {
+.room-expiry-row span,
+.room-lock-row span {
   color: var(--muted);
   font-size: 10px;
   font-weight: 800;
@@ -945,7 +947,8 @@ button:active {
   letter-spacing: 0;
 }
 
-.room-expiry-row b {
+.room-expiry-row b,
+.room-lock-row b {
   color: #236d89;
   font-size: 11px;
 }
@@ -957,6 +960,15 @@ button:active {
 
 .room-expiry-row.expired b {
   color: #a74646;
+}
+
+.room-lock-row.locked {
+  border-color: #e6d6a8;
+  background: #fffbee;
+}
+
+.room-lock-row.locked b {
+  color: #8c6a16;
 }
 
 .mini-action-button {
@@ -1271,6 +1283,80 @@ button:active {
   border-color: #a74646;
   background: #a74646;
   box-shadow: none;
+  transform: none;
+}
+
+.join-requests-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+
+.join-requests-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.join-requests-heading strong {
+  display: inline-grid;
+  place-items: center;
+  min-width: 24px;
+  height: 24px;
+  border-radius: 7px;
+  color: #8c6a16;
+  background: #fff4c8;
+  font-size: 11px;
+}
+
+.join-request-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  gap: 7px;
+  align-items: center;
+  padding: 8px;
+  border: 1px solid #e8dcc0;
+  border-radius: 8px;
+  background: #fffdf6;
+}
+
+.join-request-item > div {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.join-request-item strong {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.join-request-item small {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.join-request-item button {
+  width: 25px;
+  min-height: 25px;
+  padding: 0;
+  border-radius: 7px;
+  box-shadow: none;
+}
+
+.join-request-item button.reject {
+  border-color: #efcccc;
+  color: #a74646;
+  background: #fff5f5;
+}
+
+.join-request-item button:hover {
   transform: none;
 }
 

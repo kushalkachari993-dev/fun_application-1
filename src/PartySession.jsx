@@ -15,6 +15,7 @@ import {
   Trophy,
   UserMinus,
   UserRound,
+  X,
 } from 'lucide-react'
 import { avatarPresets } from './avatars'
 
@@ -141,11 +142,14 @@ export function PlayerRoster({
   hostId,
   isHost,
   playerEntries,
+  pendingRequests = [],
   presenceNow,
   session,
   onAdjustScore,
+  onAcceptRequest,
   onEditProfile,
   onKickPlayer,
+  onRejectRequest,
 }) {
   return (
     <aside className="players-panel">
@@ -213,6 +217,30 @@ export function PlayerRoster({
           )
         })}
       </div>
+
+      {isHost && pendingRequests.length > 0 && (
+        <div className="join-requests-list">
+          <div className="join-requests-heading">
+            <span className="mini-label">Join requests</span>
+            <strong>{pendingRequests.length}</strong>
+          </div>
+          {pendingRequests.map(([playerId, request]) => (
+            <div className="join-request-item" key={playerId}>
+              <PlayerAvatar avatar={request.avatar} name={request.name} size="small" />
+              <div>
+                <strong>{request.name}</strong>
+                <small>Attempt {request.attempts || 1}</small>
+              </div>
+              <button type="button" aria-label={`Accept ${request.name}`} title={`Accept ${request.name}`} onClick={() => onAcceptRequest(playerId)}>
+                <Check size={13} />
+              </button>
+              <button className="reject" type="button" aria-label={`Reject ${request.name}`} title={`Reject ${request.name}`} onClick={() => onRejectRequest(playerId)}>
+                <X size={13} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
 
       <button className="secondary-button switch-room-button" type="button" onClick={onEditProfile}>
         <UserRound size={16} />
