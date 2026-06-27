@@ -636,9 +636,20 @@ button:active {
   box-shadow: none;
 }
 
+.secondary-button.active {
+  color: #236d89;
+  border-color: #bad4dd;
+  background: #eaf5f8;
+}
+
 .button-row {
   gap: 9px;
   margin-top: 24px;
+}
+
+.room-code-card .button-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .meter-shell {
@@ -978,10 +989,107 @@ button:active {
   font-size: 10px;
 }
 
-.sync-pill {
+.sync-panel {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 10px;
   align-items: center;
-  border-radius: 6px;
+  max-width: 620px;
+  margin-top: 16px;
+  padding: 10px;
+  border: 1px solid #dce7eb;
+  border-radius: 8px;
+  background: #f7fbfc;
+}
+
+.sync-panel.live {
+  border-color: #c6e2da;
+  background: #f1faf7;
+}
+
+.sync-panel.reconnecting,
+.sync-panel.working {
+  border-color: #e6d6a8;
+  background: #fffbee;
+}
+
+.sync-panel.offline {
+  border-color: #f0c5c5;
+  background: #fff4f4;
+}
+
+.sync-signal {
+  display: inline-grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 7px;
+  color: #236d89;
+  background: #eaf5f8;
+}
+
+.sync-panel.live .sync-signal {
+  color: #217b5c;
+  background: #dff1ec;
+}
+
+.sync-panel.reconnecting .sync-signal,
+.sync-panel.working .sync-signal {
+  color: #8c6a16;
+  background: #fff2cc;
+}
+
+.sync-panel.offline .sync-signal {
+  color: #a74646;
+  background: #ffe7e7;
+}
+
+.sync-panel strong,
+.sync-panel small {
+  display: block;
+}
+
+.sync-panel strong {
+  color: var(--ink);
+  font-size: 12px;
+}
+
+.sync-panel small {
+  margin-top: 2px;
+  color: var(--muted);
   font-size: 11px;
+  line-height: 1.35;
+}
+
+.sync-panel button {
+  min-height: 30px;
+  padding: 6px 9px;
+  border-radius: 7px;
+  font-size: 11px;
+}
+
+.invite-share-panel {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 10px;
+  border: 1px solid #dce7eb;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.invite-share-panel small {
+  color: #217b5c;
+  font-size: 11px;
+  font-weight: 850;
+}
+
+.invite-share-panel img {
+  width: min(100%, 220px);
+  aspect-ratio: 1;
+  border: 1px solid var(--line);
+  border-radius: 8px;
 }
 
 .room-layout {
@@ -1276,6 +1384,27 @@ button:active {
   color: #a74646;
   background: #fff5f5;
   box-shadow: none;
+}
+
+.transfer-host-button {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  min-height: 24px;
+  padding: 0;
+  border: 1px solid #c6e2da;
+  border-radius: 7px;
+  color: #217b5c;
+  background: #f1faf7;
+  box-shadow: none;
+}
+
+.transfer-host-button:hover {
+  color: #fff;
+  border-color: #217b5c;
+  background: #217b5c;
+  box-shadow: none;
+  transform: none;
 }
 
 .kick-player-button:hover {

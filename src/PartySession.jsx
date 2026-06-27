@@ -13,6 +13,7 @@ import {
   RotateCcw,
   Send,
   Trophy,
+  UserCheck,
   UserMinus,
   UserRound,
   X,
@@ -150,6 +151,7 @@ export function PlayerRoster({
   onEditProfile,
   onKickPlayer,
   onRejectRequest,
+  onTransferHost,
   presenceTimeoutMs = 120000,
 }) {
   return (
@@ -167,6 +169,11 @@ export function PlayerRoster({
           const isOnline = presenceNow - (player.lastSeen || 0) < presenceTimeoutMs
           const score = session.scores?.[playerId] || 0
           const canKick = isHost && playerId !== currentPlayerId && playerId !== hostId
+          const canTransferHost = isHost
+            && isOnline
+            && session.status !== 'playing'
+            && playerId !== currentPlayerId
+            && playerId !== hostId
           return (
             <div className={`session-player ${player.ready ? 'ready' : ''}`} key={playerId}>
               <PlayerAvatar avatar={player.avatar} name={player.name} />
@@ -201,6 +208,17 @@ export function PlayerRoster({
                   <span className={`ready-indicator ${player.ready ? 'ready' : ''}`} title={player.ready ? 'Ready' : 'Not ready'}>
                     {player.ready ? <Check size={13} /> : <Circle size={10} />}
                   </span>
+                )}
+                {canTransferHost && (
+                  <button
+                    className="transfer-host-button"
+                    type="button"
+                    aria-label={`Transfer host to ${player.name}`}
+                    title={`Transfer host to ${player.name}`}
+                    onClick={() => onTransferHost(playerId)}
+                  >
+                    <UserCheck size={13} />
+                  </button>
                 )}
                 {canKick && (
                   <button

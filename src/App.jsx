@@ -9,6 +9,7 @@ import {
   useLocation,
 } from 'react-router-dom'
 import { Chess } from 'chess.js'
+import QRCode from 'qrcode'
 import {
   collection,
   doc,
@@ -43,12 +44,16 @@ import {
   MessageCircleHeart,
   PartyPopper,
   Plus,
+  QrCode,
   RefreshCw,
   RotateCcw,
+  Share2,
   ShieldAlert,
   Sparkles,
   Target,
   WandSparkles,
+  Wifi,
+  WifiOff,
   X,
   Zap,
 } from 'lucide-react'
@@ -1947,6 +1952,10 @@ function GameRoom() {
   const [syncError, setSyncError] = useState('')
   const [presenceNow, setPresenceNow] = useState(Date.now)
   const [rejoinGraceUntil, setRejoinGraceUntil] = useState(0)
+  const [reconnectNonce, setReconnectNonce] = useState(0)
+  const [qrOpen, setQrOpen] = useState(false)
+  const [qrDataUrl, setQrDataUrl] = useState('')
+  const [shareStatus, setShareStatus] = useState('')
   const authUid = authUser?.uid || ''
   const { game, history, messages, players, prompt, reactions, roomCode, round, session } = room
   const currentKickRecord = room.kickedPlayers?.[currentPlayer.id]
@@ -1993,12 +2002,49 @@ function GameRoom() {
   const winnerNames = session.winnerIds
     .map((playerId) => players[playerId]?.name)
     .filter(Boolean)
+  const inviteUrl = `${window.location.origin}/game-room?room=${roomCode}`
+  const syncTone = syncStatus === 'Offline'
+    ? 'offline'
+    : syncStatus === 'Reconnecting'
+      ? 'reconnecting'
+      : syncStatus === 'Live'
+        ? 'live'
+        : 'working'
+  const SyncIcon = syncTone === 'offline' ? WifiOff : syncTone === 'live' ? Wifi : RefreshCw
+  const syncTitle = syncStatus === 'Live'
+    ? 'Firebase live sync'
+    : syncStatus === 'Local demo'
+      ? 'Local demo'
+      : syncStatus
+  const syncDetail = syncStatus === 'Offline'
+    ? syncError || 'Room sync is paused. Try reconnecting.'
+    : syncStatus === 'Reconnecting'
+      ? 'Connection is shaky. Room changes will catch up when Firestore responds.'
+      : syncStatus === 'Saving'
+        ? 'Saving the latest room change.'
+        : syncStatus === 'Signing in'
+          ? 'Creating a temporary room identity.'
+          : syncStatus === 'Connecting'
+            ? 'Opening the room connection.'
+            : syncStatus === 'Local demo'
+              ? 'This room is only running in this browser.'
+              : 'Room changes are syncing.'
+  const canRetrySync = isFirebaseConfigured && ['Offline', 'Reconnecting'].includes(syncStatus)
 
   useEffect(() => {
     if (!hasJoined) return undefined
     const presenceTimer = window.setInterval(() => setPresenceNow(Date.now()), 30000)
     return () => window.clearInterval(presenceTimer)
   }, [hasJoined])
+
+  useEffect(() => {
+    const resetInviteState = window.setTimeout(() => {
+      setQrOpen(false)
+      setQrDataUrl('')
+      setShareStatus('')
+    }, 0)
+    return () => window.clearTimeout(resetInviteState)
+  }, [roomCode])
 
   useEffect(() => {
     if (!isFirebaseConfigured || !auth) return undefined
@@ -2396,7 +2442,7 @@ function GameRoom() {
       unsubscribers.forEach((unsubscribe) => unsubscribe())
       window.clearInterval(heartbeatId)
     }
-  }, [authReady, authUid, currentPlayer, currentPlayerLockedOut, hasJoined, roomCode])
+  }, [authReady, authUid, currentPlayer, currentPlayerLockedOut, hasJoined, reconnectNonce, roomCode])
 
   useEffect(() => {
     if (!hasJoined || currentPlayerLockedOut || currentPlayerNeedsAdmission) return undefined
@@ -2723,14 +2769,65 @@ function GameRoom() {
     }), { hostOnly: true })
   }
 
+  function retryRoomSync() {
+    setSyncError('')
+    setSyncStatus('Connecting')
+    setReconnectNonce((value) => value + 1)
+    setPresenceNow(Date.now())
+  }
+
   async function copyInvite() {
-    const inviteUrl = `${window.location.origin}/game-room?room=${roomCode}`
     try {
       await navigator.clipboard.writeText(inviteUrl)
       setCopied(true)
+      setShareStatus('Link copied')
       window.setTimeout(() => setCopied(false), 1400)
+      window.setTimeout(() => setShareStatus(''), 1600)
     } catch {
-      setSyncError('Could not copy the link. Copy it from the browser address bar.')
+      setShareStatus('Copy failed')
+      window.setTimeout(() => setShareStatus(''), 1800)
+    }
+  }
+
+  async function shareInvite() {
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: `Join room ${roomCode}`,
+          text: `Join my Just For Fun room ${roomCode}.`,
+          url: inviteUrl,
+        })
+        setShareStatus('Shared')
+        window.setTimeout(() => setShareStatus(''), 1600)
+        return
+      } catch (error) {
+        if (error?.name === 'AbortError') return
+      }
+    }
+
+    await copyInvite()
+  }
+
+  async function toggleInviteQr() {
+    if (qrOpen) {
+      setQrOpen(false)
+      return
+    }
+
+    try {
+      const dataUrl = await QRCode.toDataURL(inviteUrl, {
+        margin: 1,
+        width: 220,
+        color: {
+          dark: '#16222a',
+          light: '#ffffff',
+        },
+      })
+      setQrDataUrl(dataUrl)
+      setQrOpen(true)
+    } catch {
+      setShareStatus('QR failed')
+      window.setTimeout(() => setShareStatus(''), 1800)
     }
   }
 
@@ -3058,6 +3155,24 @@ function GameRoom() {
     }, { hostOnly: true })
   }
 
+  function transferHost(playerId) {
+    if (!canControlRoom || session.status === 'playing' || playerId === currentPlayer.id) return
+    const nextHost = players[playerId]
+    if (!nextHost || !isPlayerActive(nextHost, presenceNow)) return
+    const shouldTransfer = window.confirm(`Transfer host controls to ${nextHost.name}?`)
+    if (!shouldTransfer) return
+
+    mutateRoom((currentRoom) => {
+      const targetPlayer = currentRoom.players[playerId]
+      if (!targetPlayer || !isPlayerActive(targetPlayer) || currentRoom.hostId === playerId) return {}
+
+      return {
+        hostId: playerId,
+        messageCreates: [systemMessage(`${targetPlayer.name} is now the room host.`)],
+      }
+    }, { hostOnly: true })
+  }
+
   function sendChatMessage(text) {
     const cleanText = text.trim().slice(0, 240)
     if (!cleanText) return
@@ -3237,10 +3352,21 @@ function GameRoom() {
             <span className="mini-label">Common room</span>
             <h2>The Party Board</h2>
             <p>Ready up, chat live, keep score, and run party prompts or proper board games together.</p>
-            <span className={`sync-pill ${syncStatus.toLowerCase().replace(' ', '-')}`}>
-              {syncStatus === 'Live' ? 'Firebase live sync' : syncStatus}
-            </span>
-            {syncError && <p className="sync-error">{syncError}</p>}
+            <div className={`sync-panel ${syncTone}`}>
+              <span className="sync-signal">
+                <SyncIcon size={15} />
+              </span>
+              <div>
+                <strong>{syncTitle}</strong>
+                <small>{syncDetail}</small>
+              </div>
+              {canRetrySync && (
+                <button type="button" onClick={retryRoomSync}>
+                  <RefreshCw size={14} />
+                  Retry
+                </button>
+              )}
+            </div>
           </div>
           <div className="room-code-card">
             <span>Room Code</span>
@@ -3274,11 +3400,27 @@ function GameRoom() {
                 <Copy size={17} />
                 {copied ? 'Copied Link' : 'Copy Invite'}
               </button>
+              <button type="button" onClick={shareInvite}>
+                <Share2 size={17} />
+                Share
+              </button>
+              <button className={qrOpen ? 'secondary-button active' : 'secondary-button'} type="button" onClick={toggleInviteQr}>
+                <QrCode size={17} />
+                QR
+              </button>
               <button className="secondary-button" type="button" onClick={startNewRoom}>
                 <Plus size={17} />
                 New Room
               </button>
             </div>
+            {(shareStatus || qrOpen) && (
+              <div className="invite-share-panel">
+                {shareStatus && <small>{shareStatus}</small>}
+                {qrOpen && qrDataUrl && (
+                  <img src={qrDataUrl} alt={`Invite QR for room ${roomCode}`} />
+                )}
+              </div>
+            )}
           </div>
         </div>
 
@@ -3311,6 +3453,7 @@ function GameRoom() {
             onEditProfile={editPlayer}
             onKickPlayer={kickPlayer}
             onRejectRequest={rejectJoinRequest}
+            onTransferHost={transferHost}
           />
 
           <section className="round-board">

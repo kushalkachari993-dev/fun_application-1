@@ -9,6 +9,8 @@ npm.cmd install
 npm.cmd run dev
 ```
 
+Every push and pull request runs `npm ci`, `npm run lint`, and `npm run build` through GitHub Actions.
+
 ## Firebase Game Room Sync
 
 The Game Room works in local demo mode without Firebase config. With Firebase enabled, friends can join from separate devices, choose avatars, ready up, chat live, keep score, save match history, and play synchronized party rounds, Chess, or Ludo.
@@ -29,6 +31,8 @@ Chat queries only the latest 60 messages, and match history queries only the lat
 Hosts can remove non-host players from the room. Each removal adds one strike in `rooms/{roomId}.kickedPlayers`. Strike 1 and 2 remove the player from the roster but let them rejoin; strike 3 blocks that player profile from the room permanently. Kicked players are also cleared from Chess/Ludo seats and current scores.
 
 Hosts can also lock a room. Locked rooms use `rooms/{roomId}/joinRequests/{playerId}` so new players must request access. Hosts can accept or reject pending requests; rejected players can request again later, while permanently blocked players cannot.
+
+Room invites support copy, native share, and QR code options. Hosts can transfer host control to another online player from the roster while the room is outside an active match.
 
 Rooms are created with a 24-hour cleanup timer. The room document stores `expiresAt` for the UI and `expireAt` as a Firestore timestamp. Player, message, game state, and history documents also receive `expireAt`, so you can later enable Firestore TTL policies for old room cleanup.
 

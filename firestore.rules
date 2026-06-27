@@ -180,7 +180,7 @@ service cloud.firestore {
           && request.resource.data.playerId == request.auth.uid
           && request.resource.data.uid == request.auth.uid
         ) || (
-          isHostAfter(roomId)
+          (isHost(roomId) || isHostAfter(roomId))
           && request.resource.data.system == true
         );
 
