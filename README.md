@@ -31,6 +31,8 @@ Hosts can also lock a room. Locked rooms use `rooms/{roomId}.joinRequests` so ne
 
 Rooms are created with a 24-hour cleanup timer. The room document stores `expiresAt` for the UI and `expireAt` as a Firestore timestamp. Player, message, game state, and history documents also receive `expireAt`, so you can later enable Firestore TTL policies for old room cleanup.
 
+Rooms also self-heal during joins, room actions, and idle presence checks. Players whose `lastSeen` is more than 2 minutes old are pruned from the roster, current scores, and Chess/Ludo seats. If the host is stale, the room assigns a live player as the new host. If a room has no live players when someone joins later, it is reset with the joining player as host, clears old access state, and advances `resetAt` so old chat/history documents are treated as archived until TTL removes them.
+
 1. Create a Firebase project.
 2. Add a Web App in Firebase project settings.
 3. Create a Cloud Firestore database.

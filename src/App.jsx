@@ -12,6 +12,7 @@ import { Chess } from 'chess.js'
 import {
   collection,
   doc,
+  getDocs,
   limit,
   onSnapshot,
   orderBy,
@@ -295,11 +296,12 @@ const playerStorageKey = 'just-for-fun-player'
 const chatMessageLimit = 60
 const matchHistoryLimit = 12
 const kickLimit = 3
+const playerPresenceTimeoutMs = 2 * 60 * 1000
 const roomLifetimeMs = 24 * 60 * 60 * 1000
 const roomSchemaVersion = 2
 const gameStateDocId = 'current'
 const gameStateKeys = ['game', 'prompt', 'round', 'reactions', 'session', 'chess', 'ludo']
-const roomMetadataKeys = ['roomCode', 'hostId', 'expiresAt', 'kickedPlayers', 'joinRequests', 'locked']
+const roomMetadataKeys = ['roomCode', 'hostId', 'expiresAt', 'resetAt', 'kickedPlayers', 'joinRequests', 'locked']
 
 const pages = [
   {
@@ -445,9 +447,8 @@ function ttlFields(expiresAt = createRoomExpiry()) {
   }
 }
 
-function createInitialRoom(roomCode, player = null) {
+function createInitialRoom(roomCode, player = null, now = Date.now()) {
   const game = roomGames[0]
-  const now = Date.now()
   const expiresAt = createRoomExpiry(now)
 
   return {
@@ -455,6 +456,7 @@ function createInitialRoom(roomCode, player = null) {
     hostId: player?.id || '',
     createdAt: now,
     expiresAt,
+    resetAt: now,
     kickedPlayers: {},
     joinRequests: {},
     locked: false,
@@ -620,6 +622,108 @@ function normalizePlayerPatch(playerPatch = {}) {
   return nextPatch
 }
 
+function isPlayerActive(player, now = Date.now()) {
+  return Boolean(player?.lastSeen) && now - (player.lastSeen || 0) < playerPresenceTimeoutMs
+}
+
+function isPlayerActiveForMaintenance(playerId, player, now, keepPlayerId = '') {
+  return playerId === keepPlayerId || isPlayerActive(player, now)
+}
+
+function chooseNextHostId(players, currentHostId = '', now = Date.now(), keepPlayerId = '', preferredHostId = '') {
+  if (
+    currentHostId
+    && players[currentHostId]
+    && isPlayerActiveForMaintenance(currentHostId, players[currentHostId], now, keepPlayerId)
+  ) {
+    return currentHostId
+  }
+
+  if (
+    preferredHostId
+    && players[preferredHostId]
+    && isPlayerActiveForMaintenance(preferredHostId, players[preferredHostId], now, keepPlayerId)
+  ) {
+    return preferredHostId
+  }
+
+  return Object.entries(players)
+    .filter(([playerId, player]) => isPlayerActiveForMaintenance(playerId, player, now, keepPlayerId))
+    .sort(([, firstPlayer], [, secondPlayer]) => (
+      (firstPlayer.joinedAt || firstPlayer.lastSeen || 0)
+      - (secondPlayer.joinedAt || secondPlayer.lastSeen || 0)
+    ))[0]?.[0] || ''
+}
+
+function playersFromQuerySnapshot(snapshot) {
+  return Object.fromEntries(
+    (snapshot?.docs || []).map((playerSnapshot) => [
+      playerSnapshot.id,
+      normalizePlayer(playerSnapshot.data()),
+    ]),
+  )
+}
+
+function playersFromDocSnapshots(snapshots) {
+  return Object.fromEntries(
+    snapshots
+      .filter((snapshot) => snapshot.exists())
+      .map((snapshot) => [snapshot.id, normalizePlayer(snapshot.data())]),
+  )
+}
+
+function hasRoomPatch(patch) {
+  return Object.values(patch || {}).some((value) => {
+    if (value === undefined) return false
+    if (Array.isArray(value)) return value.length > 0
+    if (value && typeof value === 'object' && !value.toMillis) return Object.keys(value).length > 0
+    return true
+  })
+}
+
+function mergeRoomPatches(...patches) {
+  return patches.filter(hasRoomPatch).reduce((merged, patch) => {
+    const next = {
+      ...merged,
+      ...patch,
+    }
+
+    if (merged.playerDeletes || patch.playerDeletes) {
+      next.playerDeletes = [...new Set([
+        ...(merged.playerDeletes || []),
+        ...(patch.playerDeletes || []),
+      ])]
+    }
+
+    if (merged.playerPatches || patch.playerPatches) {
+      const playerPatches = { ...(merged.playerPatches || {}) }
+      Object.entries(patch.playerPatches || {}).forEach(([playerId, playerPatch]) => {
+        playerPatches[playerId] = {
+          ...(playerPatches[playerId] || {}),
+          ...playerPatch,
+        }
+      })
+      next.playerPatches = playerPatches
+    }
+
+    if (merged.messageCreates || patch.messageCreates) {
+      next.messageCreates = [
+        ...(merged.messageCreates || []),
+        ...(patch.messageCreates || []),
+      ]
+    }
+
+    if (merged.historyCreates || patch.historyCreates) {
+      next.historyCreates = [
+        ...(merged.historyCreates || []),
+        ...(patch.historyCreates || []),
+      ]
+    }
+
+    return next
+  }, {})
+}
+
 function normalizeMessage(message = {}) {
   const createdAt = normalizeTime(message.createdAt) || Date.now()
   const normalized = {
@@ -718,6 +822,9 @@ function normalizeRoom(data, roomCode) {
   const expiresAt = normalizeTime(data?.expiresAt)
     || normalizeTime(data?.expireAt)
     || fallback.expiresAt
+  const resetAt = normalizeTime(data?.resetAt)
+    || normalizeTime(data?.createdAt)
+    || fallback.resetAt
 
   return {
     ...fallback,
@@ -727,6 +834,7 @@ function normalizeRoom(data, roomCode) {
     hostId,
     createdAt: normalizeTime(data?.createdAt) || fallback.createdAt,
     expiresAt,
+    resetAt,
     kickedPlayers: normalizeKickedPlayers(data?.kickedPlayers),
     joinRequests: normalizeJoinRequests(data?.joinRequests),
     locked: Boolean(data?.locked),
@@ -852,6 +960,65 @@ function writeRoomPatchToTransaction(transaction, roomCode, patch) {
   }
 }
 
+function writeFreshRoomToTransaction(transaction, roomCode, currentPlayer, options = {}) {
+  const {
+    archivedPlayerIds = [],
+    messageText = '',
+    now = Date.now(),
+  } = options
+  const nextRoom = createInitialRoom(roomCode, currentPlayer, now)
+  const ttl = ttlFields(nextRoom.expiresAt)
+  const roomRef = doc(db, 'rooms', roomCode)
+  const gameStateRef = doc(db, 'rooms', roomCode, 'gameState', gameStateDocId)
+  const playerRef = doc(db, 'rooms', roomCode, 'players', currentPlayer.id)
+
+  transaction.set(roomRef, {
+    roomCode,
+    hostId: currentPlayer.id,
+    schemaVersion: roomSchemaVersion,
+    expiresAt: nextRoom.expiresAt,
+    resetAt: nextRoom.resetAt,
+    expireAt: ttl.expireAt,
+    kickedPlayers: {},
+    joinRequests: {},
+    locked: false,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  })
+  transaction.set(gameStateRef, {
+    ...createInitialGameState(nextRoom),
+    expireAt: ttl.expireAt,
+    updatedAt: serverTimestamp(),
+  })
+  archivedPlayerIds
+    .filter((playerId) => playerId && playerId !== currentPlayer.id)
+    .forEach((playerId) => {
+      transaction.delete(doc(db, 'rooms', roomCode, 'players', playerId))
+    })
+  transaction.set(playerRef, {
+    name: currentPlayer.name,
+    avatar: currentPlayer.avatar,
+    ready: false,
+    points: 0,
+    joinedAt: now,
+    lastSeen: now,
+    expireAt: ttl.expireAt,
+  })
+
+  if (messageText) {
+    const message = {
+      ...systemMessage(messageText),
+      createdAt: now,
+    }
+    transaction.set(doc(db, 'rooms', roomCode, 'messages', message.id), {
+      ...message,
+      expireAt: ttl.expireAt,
+    })
+  }
+
+  return nextRoom
+}
+
 function promptForGame(game, currentPrompt) {
   if (game === "Who's Most Likely To") return randomItem(likelyPrompts, currentPrompt)
   if (game === 'Would You Rather') {
@@ -943,6 +1110,91 @@ function removePlayerFromScores(scores, playerId) {
   const nextScores = { ...(scores || {}) }
   delete nextScores[playerId]
   return nextScores
+}
+
+function removePlayersFromRoomPatch(room, playerIds) {
+  const uniquePlayerIds = [...new Set(playerIds.filter(Boolean))]
+  if (uniquePlayerIds.length === 0) return {}
+
+  const nextScores = uniquePlayerIds.reduce(
+    (scores, playerId) => removePlayerFromScores(scores, playerId),
+    room.session.scores,
+  )
+  const patch = {
+    playerDeletes: uniquePlayerIds,
+    session: {
+      ...room.session,
+      scores: nextScores,
+      winnerIds: room.session.winnerIds.filter((winnerId) => !uniquePlayerIds.includes(winnerId)),
+    },
+  }
+
+  if (room.chess) {
+    patch.chess = {
+      ...room.chess,
+      seats: uniquePlayerIds.reduce(
+        (seats, playerId) => removePlayerFromSeats(seats, playerId),
+        room.chess.seats,
+      ),
+    }
+  }
+
+  if (room.ludo) {
+    patch.ludo = {
+      ...room.ludo,
+      seats: uniquePlayerIds.reduce(
+        (seats, playerId) => removePlayerFromSeats(seats, playerId),
+        room.ludo.seats,
+      ),
+    }
+  }
+
+  return patch
+}
+
+function createRoomMaintenancePatch(room, now = Date.now(), options = {}) {
+  const {
+    keepPlayerId = '',
+    preferredHostId = '',
+  } = options
+  const players = normalizePlayers(room.players)
+  const stalePlayerIds = Object.entries(players)
+    .filter(([playerId, player]) => playerId !== keepPlayerId && !isPlayerActive(player, now))
+    .map(([playerId]) => playerId)
+  const remainingPlayers = { ...players }
+  stalePlayerIds.forEach((playerId) => {
+    delete remainingPlayers[playerId]
+  })
+  const nextHostId = chooseNextHostId(
+    remainingPlayers,
+    room.hostId,
+    now,
+    keepPlayerId,
+    preferredHostId,
+  )
+  const patch = removePlayersFromRoomPatch(room, stalePlayerIds)
+
+  if (nextHostId !== room.hostId) {
+    patch.hostId = nextHostId
+  }
+
+  return patch
+}
+
+function currentPlayerPresencePatch(room, currentPlayer, now = Date.now()) {
+  const existingPlayer = room.players[currentPlayer.id]
+  if (!existingPlayer) return {}
+
+  return {
+    playerPatches: {
+      [currentPlayer.id]: {
+        name: currentPlayer.name,
+        avatar: currentPlayer.avatar,
+        joinedAt: existingPlayer.joinedAt || now,
+        lastSeen: now,
+      },
+    },
+  }
 }
 
 function kickPlayerPatch(room, playerId) {
@@ -1626,10 +1878,10 @@ function GameRoom() {
   })
   const isHost = room.hostId === currentPlayer.id
   const hostPlayer = players[room.hostId]
-  const hostIsAway = !hostPlayer || presenceNow - (hostPlayer.lastSeen || 0) >= 120000
+  const hostIsAway = !hostPlayer || presenceNow - (hostPlayer.lastSeen || 0) >= playerPresenceTimeoutMs
   const canControlRoom = !currentPlayerLockedOut && (isHost || hostIsAway)
   const activePlayerEntries = playerEntries.filter(([, player]) => (
-    presenceNow - (player.lastSeen || 0) < 120000
+    isPlayerActive(player, presenceNow)
   ))
   const nonHostPlayers = activePlayerEntries.filter(([playerId]) => playerId !== room.hostId)
   const allReady = nonHostPlayers.every(([, player]) => player.ready)
@@ -1667,93 +1919,96 @@ function GameRoom() {
     let cancelled = false
     let shouldStartHeartbeat = false
 
-    runTransaction(db, async (transaction) => {
-      const snapshot = await transaction.get(roomRef)
-      const gameStateSnapshot = await transaction.get(gameStateRef)
-      const playerSnapshot = await transaction.get(playerRef)
-      const seedRoom = createInitialRoom(roomCode, currentPlayer)
-      const roomData = snapshot.exists() ? snapshot.data() : {}
-      const currentHostId = roomData.hostId || currentPlayer.id
-      const hostRef = doc(db, 'rooms', roomCode, 'players', currentHostId)
-      const hostSnapshot = currentHostId === currentPlayer.id
-        ? playerSnapshot
-        : await transaction.get(hostRef)
-      const now = Date.now()
-      const shouldMigrateLegacyRoom = snapshot.exists()
-        && (!gameStateSnapshot.exists() || roomData.schemaVersion !== roomSchemaVersion)
+    getDocs(playersRef)
+      .then((playersSnapshot) => runTransaction(db, async (transaction) => {
+        const snapshot = await transaction.get(roomRef)
+        const gameStateSnapshot = await transaction.get(gameStateRef)
+        const playerSnapshot = await transaction.get(playerRef)
+        const roomData = snapshot.exists() ? snapshot.data() : {}
+        const currentHostId = roomData.hostId || currentPlayer.id
+        const hostRef = doc(db, 'rooms', roomCode, 'players', currentHostId)
+        const hostSnapshot = currentHostId === currentPlayer.id
+          ? playerSnapshot
+          : await transaction.get(hostRef)
+        const now = Date.now()
+        const preloadedPlayers = playersFromQuerySnapshot(playersSnapshot)
+        if (playerSnapshot.exists()) {
+          preloadedPlayers[currentPlayer.id] = normalizePlayer(playerSnapshot.data())
+        }
+        if (hostSnapshot.exists()) {
+          preloadedPlayers[currentHostId] = normalizePlayer(hostSnapshot.data())
+        }
+        const shouldMigrateLegacyRoom = snapshot.exists()
+          && (!gameStateSnapshot.exists() || roomData.schemaVersion !== roomSchemaVersion)
 
-      if (!snapshot.exists()) {
-        const nextRoom = createInitialRoom(roomCode, currentPlayer)
-        const existingPlayer = playerSnapshot.exists() ? normalizePlayer(playerSnapshot.data()) : null
-        const ttl = ttlFields(nextRoom.expiresAt)
-        transaction.set(roomRef, {
-          roomCode,
-          hostId: currentPlayer.id,
-          schemaVersion: roomSchemaVersion,
-          expiresAt: nextRoom.expiresAt,
-          expireAt: ttl.expireAt,
-          kickedPlayers: {},
-          joinRequests: {},
-          locked: false,
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-        })
-        transaction.set(gameStateRef, {
-          ...createInitialGameState(nextRoom),
-          expireAt: ttl.expireAt,
-          updatedAt: serverTimestamp(),
-        })
-        transaction.set(playerRef, {
-          name: currentPlayer.name,
-          avatar: currentPlayer.avatar,
-          ready: existingPlayer?.ready || false,
-          points: existingPlayer?.points || 0,
-          joinedAt: existingPlayer?.joinedAt || now,
-          lastSeen: now,
-          expireAt: ttl.expireAt,
-        }, { merge: true })
-        shouldStartHeartbeat = true
-      } else {
-        const currentRoom = roomFromFirestoreSnapshots(
+        if (!snapshot.exists()) {
+          writeFreshRoomToTransaction(transaction, roomCode, currentPlayer, {
+            archivedPlayerIds: Object.keys(preloadedPlayers),
+            now,
+          })
+          shouldStartHeartbeat = true
+          return
+        }
+
+        const persistedRoom = roomFromFirestoreSnapshots(
           snapshot,
           gameStateSnapshot,
-          seedRoom,
+          {
+            ...createInitialRoom(roomCode, null, now),
+            players: preloadedPlayers,
+          },
           roomCode,
         )
-        const existingPlayer = playerSnapshot.exists()
-          ? normalizePlayer(playerSnapshot.data())
-          : currentRoom.players[currentPlayer.id]
-        const currentHost = hostSnapshot.exists()
-          ? normalizePlayer(hostSnapshot.data())
-          : currentRoom.players[currentRoom.hostId]
-        const shouldClaimHost = !currentHost || now - (currentHost.lastSeen || 0) >= 120000
+        const persistedPlayerIds = Object.keys(persistedRoom.players)
+        const activePersistedPlayerIds = persistedPlayerIds.filter((playerId) => (
+          isPlayerActive(persistedRoom.players[playerId], now)
+        ))
+
+        if (activePersistedPlayerIds.length === 0) {
+          writeFreshRoomToTransaction(transaction, roomCode, currentPlayer, {
+            archivedPlayerIds: persistedPlayerIds,
+            messageText: 'Room reset after everyone left.',
+            now,
+          })
+          shouldStartHeartbeat = true
+          return
+        }
+
         const currentExpiresAt = normalizeTime(roomData.expiresAt)
           || normalizeTime(roomData.expireAt)
           || createRoomExpiry(now)
         const ttl = ttlFields(currentExpiresAt)
-        const currentKick = normalizeKickRecord(roomData.kickedPlayers?.[currentPlayer.id])
+        const currentKick = normalizeKickRecord(persistedRoom.kickedPlayers?.[currentPlayer.id])
         if (currentKick?.blocked) {
           throw new Error('You were permanently removed from this room by the host.')
         }
-        const legacyPlayers = normalizePlayers(roomData.players)
-        const joinRequests = normalizeJoinRequests(roomData.joinRequests)
+
+        const maintenancePatch = createRoomMaintenancePatch(persistedRoom, now, {
+          keepPlayerId: currentPlayer.id,
+        })
+        const maintainedRoom = applyRoomPatch(persistedRoom, maintenancePatch)
+        if (hasRoomPatch(maintenancePatch)) {
+          writeRoomPatchToTransaction(transaction, roomCode, maintenancePatch)
+        }
+
+        const existingPlayer = playerSnapshot.exists()
+          ? normalizePlayer(playerSnapshot.data())
+          : maintainedRoom.players[currentPlayer.id]
+        const joinRequests = maintainedRoom.joinRequests
         const currentRequest = joinRequests[currentPlayer.id]
-        const isExistingMember = playerSnapshot.exists() || Boolean(legacyPlayers[currentPlayer.id])
+        const isExistingMember = Boolean(maintainedRoom.players[currentPlayer.id])
         const requestIsApproved = currentRequest?.status === 'accepted'
-        const shouldRequestToJoin = Boolean(roomData.locked)
+        const shouldRequestToJoin = maintainedRoom.locked
           && !isExistingMember
           && !requestIsApproved
-          && currentRoom.hostId !== currentPlayer.id
-        const nextHostId = shouldClaimHost && !shouldRequestToJoin
-          ? currentPlayer.id
-          : currentRoom.hostId
+          && maintainedRoom.hostId !== currentPlayer.id
 
         if (shouldRequestToJoin) {
           transaction.set(roomRef, {
             roomCode,
             schemaVersion: roomSchemaVersion,
-            hostId: nextHostId,
-            locked: Boolean(roomData.locked),
+            hostId: maintainedRoom.hostId,
+            locked: maintainedRoom.locked,
             joinRequests: {
               ...joinRequests,
               [currentPlayer.id]: currentRequest?.status === 'pending'
@@ -1765,6 +2020,7 @@ function GameRoom() {
                 : createJoinRequest(currentPlayer, currentRequest),
             },
             expiresAt: currentExpiresAt,
+            resetAt: maintainedRoom.resetAt,
             expireAt: ttl.expireAt,
             updatedAt: serverTimestamp(),
           }, { merge: true })
@@ -1774,7 +2030,7 @@ function GameRoom() {
         transaction.set(roomRef, {
           roomCode,
           schemaVersion: roomSchemaVersion,
-          hostId: nextHostId,
+          hostId: maintainedRoom.hostId,
           ...(requestIsApproved
             ? {
                 joinRequests: {
@@ -1788,28 +2044,32 @@ function GameRoom() {
               }
             : {}),
           expiresAt: currentExpiresAt,
+          resetAt: maintainedRoom.resetAt,
           expireAt: ttl.expireAt,
           updatedAt: serverTimestamp(),
         }, { merge: true })
 
         if (!gameStateSnapshot.exists()) {
           transaction.set(gameStateRef, {
-            ...createInitialGameState(currentRoom),
+            ...createInitialGameState(maintainedRoom),
             expireAt: ttl.expireAt,
             updatedAt: serverTimestamp(),
           }, { merge: true })
         }
 
         if (shouldMigrateLegacyRoom) {
-          Object.entries(normalizePlayers(roomData.players)).forEach(([playerId, player]) => {
-            transaction.set(doc(db, 'rooms', roomCode, 'players', playerId), {
-              ...player,
-              expireAt: ttl.expireAt,
-            }, { merge: true })
-          })
+          Object.entries(normalizePlayers(roomData.players))
+            .filter(([playerId]) => !maintenancePatch.playerDeletes?.includes(playerId))
+            .forEach(([playerId, player]) => {
+              transaction.set(doc(db, 'rooms', roomCode, 'players', playerId), {
+                ...player,
+                expireAt: ttl.expireAt,
+              }, { merge: true })
+            })
           ;(Array.isArray(roomData.messages) ? roomData.messages : [])
             .slice(-chatMessageLimit)
             .map(normalizeMessage)
+            .filter((message) => message.createdAt >= maintainedRoom.resetAt)
             .forEach((message) => {
               transaction.set(doc(db, 'rooms', roomCode, 'messages', message.id), {
                 ...message,
@@ -1819,6 +2079,7 @@ function GameRoom() {
           ;(Array.isArray(roomData.history) ? roomData.history : [])
             .slice(-matchHistoryLimit)
             .map(normalizeMatch)
+            .filter((match) => match.endedAt >= maintainedRoom.resetAt)
             .forEach((match) => {
               transaction.set(doc(db, 'rooms', roomCode, 'history', match.id), {
                 ...match,
@@ -1837,8 +2098,7 @@ function GameRoom() {
           expireAt: ttl.expireAt,
         }, { merge: true })
         shouldStartHeartbeat = true
-      }
-    })
+      }))
       .then(() => {
         if (cancelled || !shouldStartHeartbeat) return
         heartbeatId = window.setInterval(() => {
@@ -1922,9 +2182,10 @@ function GameRoom() {
         messagesQuery,
         { includeMetadataChanges: true },
         (snapshot) => {
+          const nextMessages = snapshot.docs.map(messageFromDoc).reverse()
           setRoom((currentRoom) => normalizeRoom({
             ...currentRoom,
-            messages: snapshot.docs.map(messageFromDoc).reverse(),
+            messages: nextMessages.filter((message) => message.createdAt >= currentRoom.resetAt),
           }, roomCode))
           markSnapshot(snapshot)
         },
@@ -1937,9 +2198,10 @@ function GameRoom() {
         historyQuery,
         { includeMetadataChanges: true },
         (snapshot) => {
+          const nextHistory = snapshot.docs.map(matchFromDoc).reverse()
           setRoom((currentRoom) => normalizeRoom({
             ...currentRoom,
-            history: snapshot.docs.map(matchFromDoc).reverse(),
+            history: nextHistory.filter((match) => match.endedAt >= currentRoom.resetAt),
           }, roomCode))
           markSnapshot(snapshot)
         },
@@ -1957,20 +2219,114 @@ function GameRoom() {
     }
   }, [currentPlayer, currentPlayerLockedOut, hasJoined, roomCode])
 
+  useEffect(() => {
+    if (!hasJoined || currentPlayerLockedOut || currentPlayerNeedsAdmission) return undefined
+
+    const maintenancePatch = createRoomMaintenancePatch(room, presenceNow, {
+      keepPlayerId: currentPlayer.id,
+      preferredHostId: hostIsAway ? currentPlayer.id : '',
+    })
+    if (!hasRoomPatch(maintenancePatch)) return undefined
+
+    if (!isFirebaseConfigured) {
+      const maintenanceId = window.setTimeout(() => setRoom((currentRoom) => {
+        const now = Date.now()
+        const nextMaintenancePatch = createRoomMaintenancePatch(currentRoom, now, {
+          keepPlayerId: currentPlayer.id,
+          preferredHostId: hostIsAway ? currentPlayer.id : '',
+        })
+        if (!hasRoomPatch(nextMaintenancePatch)) return currentRoom
+        const maintainedRoom = applyRoomPatch(currentRoom, nextMaintenancePatch)
+        return applyRoomPatch(
+          maintainedRoom,
+          currentPlayerPresencePatch(maintainedRoom, currentPlayer, now),
+        )
+      }), 0)
+      return () => window.clearTimeout(maintenanceId)
+    }
+
+    let cancelled = false
+    runTransaction(db, async (transaction) => {
+      const roomRef = doc(db, 'rooms', roomCode)
+      const gameStateRef = doc(db, 'rooms', roomCode, 'gameState', gameStateDocId)
+      const snapshot = await transaction.get(roomRef)
+      if (!snapshot.exists()) return
+
+      const gameStateSnapshot = await transaction.get(gameStateRef)
+      const playerSnapshots = await Promise.all(
+        Object.keys(room.players).map((playerId) => (
+          transaction.get(doc(db, 'rooms', roomCode, 'players', playerId))
+        )),
+      )
+      const latestPlayers = playersFromDocSnapshots(playerSnapshots)
+      const currentRoom = roomFromFirestoreSnapshots(
+        snapshot,
+        gameStateSnapshot,
+        {
+          ...room,
+          players: {
+            ...room.players,
+            ...latestPlayers,
+          },
+        },
+        roomCode,
+      )
+      const now = Date.now()
+      const nextMaintenancePatch = createRoomMaintenancePatch(currentRoom, now, {
+        keepPlayerId: currentPlayer.id,
+        preferredHostId: hostIsAway ? currentPlayer.id : '',
+      })
+      if (!hasRoomPatch(nextMaintenancePatch)) return
+      const maintainedRoom = applyRoomPatch(currentRoom, nextMaintenancePatch)
+      writeRoomPatchToTransaction(
+        transaction,
+        roomCode,
+        mergeRoomPatches(
+          nextMaintenancePatch,
+          currentPlayerPresencePatch(maintainedRoom, currentPlayer, now),
+        ),
+      )
+    }).catch((error) => {
+      if (cancelled) return
+      setSyncStatus('Offline')
+      setSyncError(formatSyncError(error))
+    })
+
+    return () => {
+      cancelled = true
+    }
+  }, [
+    currentPlayer,
+    currentPlayerLockedOut,
+    currentPlayerNeedsAdmission,
+    hasJoined,
+    hostIsAway,
+    presenceNow,
+    room,
+    roomCode,
+  ])
+
   function mutateRoom(createPatch, { hostOnly = false } = {}) {
     if (currentPlayerLockedOut) return
     if (hostOnly && !canControlRoom) return
 
     if (!isFirebaseConfigured) {
       setRoom((currentRoom) => {
-        const hostPatch = hostOnly && currentRoom.hostId !== currentPlayer.id
-          ? { hostId: currentPlayer.id }
-          : {}
-        const effectiveRoom = normalizeRoom({
-          ...currentRoom,
-          ...hostPatch,
-        }, currentRoom.roomCode)
-        return applyRoomPatch(effectiveRoom, createPatch(effectiveRoom))
+        const now = Date.now()
+        const maintenancePatch = createRoomMaintenancePatch(currentRoom, now, {
+          keepPlayerId: currentPlayer.id,
+          preferredHostId: hostOnly ? currentPlayer.id : '',
+        })
+        const maintainedRoom = applyRoomPatch(currentRoom, maintenancePatch)
+        if (hostOnly && maintainedRoom.hostId !== currentPlayer.id) return currentRoom
+
+        return applyRoomPatch(
+          maintainedRoom,
+          mergeRoomPatches(
+            createPatch(maintainedRoom) || {},
+            currentPlayerPresencePatch(maintainedRoom, currentPlayer, now),
+          ),
+        )
       })
       return
     }
@@ -1983,28 +2339,41 @@ function GameRoom() {
       if (!snapshot.exists()) throw new Error('This room no longer exists.')
 
       const gameStateSnapshot = await transaction.get(gameStateRef)
-      const currentRoom = roomFromFirestoreSnapshots(snapshot, gameStateSnapshot, room, roomCode)
-      const currentHostRef = currentRoom.hostId
-        ? doc(db, 'rooms', roomCode, 'players', currentRoom.hostId)
-        : null
-      const currentHostSnapshot = currentHostRef ? await transaction.get(currentHostRef) : null
-      const currentHost = currentHostSnapshot?.exists()
-        ? normalizePlayer(currentHostSnapshot.data())
-        : currentRoom.players[currentRoom.hostId]
-      const currentHostIsAway = !currentHost || Date.now() - (currentHost.lastSeen || 0) >= 120000
-      if (hostOnly && currentRoom.hostId !== currentPlayer.id && !currentHostIsAway) return
-
-      const hostPatch = hostOnly && currentRoom.hostId !== currentPlayer.id
-        ? { hostId: currentPlayer.id }
-        : {}
-      const effectiveRoom = normalizeRoom({
-        ...currentRoom,
-        ...hostPatch,
-      }, roomCode)
-      writeRoomPatchToTransaction(transaction, roomCode, {
-        ...hostPatch,
-        ...(createPatch(effectiveRoom) || {}),
+      const playerSnapshots = await Promise.all(
+        Object.keys(room.players).map((playerId) => (
+          transaction.get(doc(db, 'rooms', roomCode, 'players', playerId))
+        )),
+      )
+      const latestPlayers = playersFromDocSnapshots(playerSnapshots)
+      const currentRoom = roomFromFirestoreSnapshots(
+        snapshot,
+        gameStateSnapshot,
+        {
+          ...room,
+          players: {
+            ...room.players,
+            ...latestPlayers,
+          },
+        },
+        roomCode,
+      )
+      const now = Date.now()
+      const maintenancePatch = createRoomMaintenancePatch(currentRoom, now, {
+        keepPlayerId: currentPlayer.id,
+        preferredHostId: hostOnly ? currentPlayer.id : '',
       })
+      const maintainedRoom = applyRoomPatch(currentRoom, maintenancePatch)
+      if (hostOnly && maintainedRoom.hostId !== currentPlayer.id) return
+
+      writeRoomPatchToTransaction(
+        transaction,
+        roomCode,
+        mergeRoomPatches(
+          maintenancePatch,
+          createPatch(maintainedRoom) || {},
+          currentPlayerPresencePatch(maintainedRoom, currentPlayer, now),
+        ),
+      )
     }).catch((error) => {
       setSyncStatus('Offline')
       setSyncError(formatSyncError(error))
@@ -2406,7 +2775,7 @@ function GameRoom() {
         ? currentRoom
         : { ...currentRoom, hostId: currentPlayer.id }
       const activeEntries = Object.entries(currentRoom.players).filter(([, player]) => (
-        now - (player.lastSeen || 0) < 120000
+        isPlayerActive(player, now)
       ))
       const waitingPlayers = activeEntries.filter(([playerId, player]) => (
         playerId !== currentPlayer.id && !player.ready
@@ -2738,6 +3107,7 @@ function GameRoom() {
             isHost={canControlRoom}
             playerEntries={playerEntries}
             presenceNow={presenceNow}
+            presenceTimeoutMs={playerPresenceTimeoutMs}
             pendingRequests={pendingRequests}
             session={session}
             onAdjustScore={adjustScore}

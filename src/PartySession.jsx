@@ -150,6 +150,7 @@ export function PlayerRoster({
   onEditProfile,
   onKickPlayer,
   onRejectRequest,
+  presenceTimeoutMs = 120000,
 }) {
   return (
     <aside className="players-panel">
@@ -163,7 +164,7 @@ export function PlayerRoster({
 
       <div className="player-list">
         {playerEntries.map(([playerId, player]) => {
-          const isOnline = presenceNow - (player.lastSeen || 0) < 120000
+          const isOnline = presenceNow - (player.lastSeen || 0) < presenceTimeoutMs
           const score = session.scores?.[playerId] || 0
           const canKick = isHost && playerId !== currentPlayerId && playerId !== hostId
           return (
