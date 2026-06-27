@@ -2,11 +2,213 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /rooms/{roomId} {
-      allow read, write: if true;
+    function signedIn() {
+      return request.auth != null;
+    }
 
-      match /{document=**} {
-        allow read, write: if true;
+    function roomPath(roomId) {
+      return /databases/$(database)/documents/rooms/$(roomId);
+    }
+
+    function playerPath(roomId, playerId) {
+      return /databases/$(database)/documents/rooms/$(roomId)/players/$(playerId);
+    }
+
+    function requestPath(roomId, playerId) {
+      return /databases/$(database)/documents/rooms/$(roomId)/joinRequests/$(playerId);
+    }
+
+    function isOwnPlayer(playerId) {
+      return signedIn() && playerId == request.auth.uid;
+    }
+
+    function isMember(roomId) {
+      return signedIn()
+        && exists(playerPath(roomId, request.auth.uid))
+        && get(playerPath(roomId, request.auth.uid)).data.uid == request.auth.uid;
+    }
+
+    function isMemberAfter(roomId) {
+      return signedIn()
+        && getAfter(playerPath(roomId, request.auth.uid)).data.uid == request.auth.uid;
+    }
+
+    function isHost(roomId) {
+      return signedIn()
+        && exists(roomPath(roomId))
+        && get(roomPath(roomId)).data.hostId == request.auth.uid;
+    }
+
+    function isHostAfter(roomId) {
+      return signedIn()
+        && getAfter(roomPath(roomId)).data.hostId == request.auth.uid
+        && getAfter(playerPath(roomId, request.auth.uid)).data.uid == request.auth.uid;
+    }
+
+    function staleTimestamp(timestampValue) {
+      return timestampValue < request.time - duration.value(2, 'm');
+    }
+
+    function stalePlayerDoc(playerDoc) {
+      return !playerDoc.data.keys().hasAny(['lastSeenAt'])
+        || staleTimestamp(playerDoc.data.lastSeenAt);
+    }
+
+    function currentHostIsStale(roomId) {
+      return !exists(playerPath(roomId, resource.data.hostId))
+        || stalePlayerDoc(get(playerPath(roomId, resource.data.hostId)));
+    }
+
+    function roomIsAbandoned() {
+      return !resource.data.keys().hasAny(['lastActiveAt'])
+        || staleTimestamp(resource.data.lastActiveAt);
+    }
+
+    function roomMetadataKeys() {
+      return [
+        'roomCode',
+        'hostId',
+        'schemaVersion',
+        'expiresAt',
+        'expireAt',
+        'resetAt',
+        'kickedPlayers',
+        'locked',
+        'joinRequests',
+        'players',
+        'messages',
+        'history',
+        'game',
+        'prompt',
+        'round',
+        'reactions',
+        'session',
+        'chess',
+        'ludo',
+        'createdAt',
+        'lastActiveAt',
+        'updatedAt',
+      ];
+    }
+
+    function ownerPlayerKeys() {
+      return [
+        'uid',
+        'name',
+        'avatar',
+        'ready',
+        'points',
+        'joinedAt',
+        'lastSeen',
+        'lastSeenAt',
+        'expireAt',
+      ];
+    }
+
+    match /rooms/{roomId} {
+      allow read: if signedIn();
+
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly(roomMetadataKeys())
+        && request.resource.data.hostId == request.auth.uid
+        && request.resource.data.locked == false;
+
+      allow update: if signedIn()
+        && request.resource.data.keys().hasOnly(roomMetadataKeys())
+        && (
+          isHost(roomId)
+          || (isHostAfter(roomId) && currentHostIsStale(roomId))
+          || (roomIsAbandoned() && request.resource.data.hostId == request.auth.uid)
+          || (
+            isMemberAfter(roomId)
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+              'lastActiveAt',
+              'updatedAt',
+            ])
+          )
+        );
+
+      allow delete: if false;
+
+      match /players/{playerId} {
+        allow read: if signedIn();
+
+        allow create: if isOwnPlayer(playerId)
+          && request.resource.data.keys().hasOnly(ownerPlayerKeys())
+          && request.resource.data.uid == request.auth.uid
+          && request.resource.data.points == 0;
+
+        allow update: if (
+          isOwnPlayer(playerId)
+          && request.resource.data.keys().hasOnly(ownerPlayerKeys())
+          && request.resource.data.uid == request.auth.uid
+          && request.resource.data.points == resource.data.points
+        ) || isHostAfter(roomId);
+
+        allow delete: if isHostAfter(roomId)
+          || (isMemberAfter(roomId) && stalePlayerDoc(resource));
+      }
+
+      match /joinRequests/{playerId} {
+        allow read: if signedIn();
+
+        allow create: if isOwnPlayer(playerId)
+          && request.resource.data.uid == request.auth.uid
+          && request.resource.data.status == 'pending';
+
+        allow update: if (
+          isOwnPlayer(playerId)
+          && request.resource.data.uid == request.auth.uid
+          && (
+            request.resource.data.status == 'pending'
+            || (resource.data.status == 'accepted' && request.resource.data.status == 'joined')
+          )
+        ) || (
+          isHostAfter(roomId)
+          && request.resource.data.status in ['accepted', 'rejected']
+        );
+
+        allow delete: if isHostAfter(roomId);
+      }
+
+      match /messages/{messageId} {
+        allow read: if signedIn();
+
+        allow create: if (
+          isMemberAfter(roomId)
+          && request.resource.data.system == false
+          && request.resource.data.playerId == request.auth.uid
+          && request.resource.data.uid == request.auth.uid
+        ) || (
+          isHostAfter(roomId)
+          && request.resource.data.system == true
+        );
+
+        allow update, delete: if false;
+      }
+
+      match /gameState/{stateId} {
+        allow read: if signedIn();
+
+        allow create, update: if isHostAfter(roomId)
+          || (
+            isMemberAfter(roomId)
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+              'reactions',
+              'chess',
+              'ludo',
+              'expireAt',
+              'updatedAt',
+            ])
+          );
+
+        allow delete: if false;
+      }
+
+      match /history/{matchId} {
+        allow read: if signedIn();
+        allow create: if isHostAfter(roomId);
+        allow update, delete: if false;
       }
     }
   }

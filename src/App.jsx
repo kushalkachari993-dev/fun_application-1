@@ -23,6 +23,10 @@ import {
   Timestamp,
 } from 'firebase/firestore'
 import {
+  onAuthStateChanged,
+  signInAnonymously,
+} from 'firebase/auth'
+import {
   Activity,
   ArrowRight,
   BarChart3,
@@ -52,7 +56,7 @@ import './App.css'
 import './polish.css'
 import { avatarPresets } from './avatars'
 import { ChessGame, LudoGame } from './BoardGames'
-import { db, isFirebaseConfigured } from './firebase'
+import { auth, db, isFirebaseConfigured } from './firebase'
 import {
   AvatarPicker,
   PlayerRoster,
@@ -301,7 +305,7 @@ const roomLifetimeMs = 24 * 60 * 60 * 1000
 const roomSchemaVersion = 2
 const gameStateDocId = 'current'
 const gameStateKeys = ['game', 'prompt', 'round', 'reactions', 'session', 'chess', 'ludo']
-const roomMetadataKeys = ['roomCode', 'hostId', 'expiresAt', 'resetAt', 'kickedPlayers', 'joinRequests', 'locked']
+const roomMetadataKeys = ['roomCode', 'hostId', 'expiresAt', 'resetAt', 'kickedPlayers', 'locked']
 
 const pages = [
   {
@@ -463,12 +467,14 @@ function createInitialRoom(roomCode, player = null, now = Date.now()) {
     players: player
       ? {
           [player.id]: {
+            uid: player.uid || player.id,
             name: player.name,
             avatar: player.avatar || avatarPresets[0].id,
             ready: false,
             points: 0,
             joinedAt: now,
             lastSeen: now,
+            lastSeenAt: now,
           },
         }
       : {},
@@ -566,6 +572,7 @@ function normalizeJoinRequest(request = {}) {
     : 'pending'
 
   return {
+    uid: request.uid || '',
     name: request.name || 'Player',
     avatar: request.avatar || avatarPresets[0].id,
     requestedAt: normalizeTime(request.requestedAt) || Date.now(),
@@ -580,6 +587,7 @@ function createJoinRequest(player, previousRequest = null) {
   const previous = previousRequest ? normalizeJoinRequest(previousRequest) : null
 
   return {
+    uid: player.uid || player.id || '',
     name: player.name || 'Player',
     avatar: player.avatar || avatarPresets[0].id,
     requestedAt: Date.now(),
@@ -592,12 +600,14 @@ function createJoinRequest(player, previousRequest = null) {
 
 function normalizePlayer(player = {}) {
   return {
+    uid: player.uid || '',
     name: player.name || 'Player',
     avatar: player.avatar || avatarPresets[0].id,
     ready: Boolean(player.ready),
     points: Number(player.points) || 0,
     joinedAt: normalizeTime(player.joinedAt),
     lastSeen: normalizeTime(player.lastSeen),
+    lastSeenAt: normalizeTime(player.lastSeenAt),
   }
 }
 
@@ -613,11 +623,13 @@ function normalizePlayerPatch(playerPatch = {}) {
   const nextPatch = {}
 
   if ('name' in playerPatch) nextPatch.name = playerPatch.name || 'Player'
+  if ('uid' in playerPatch) nextPatch.uid = playerPatch.uid || ''
   if ('avatar' in playerPatch) nextPatch.avatar = playerPatch.avatar || avatarPresets[0].id
   if ('ready' in playerPatch) nextPatch.ready = Boolean(playerPatch.ready)
   if ('points' in playerPatch) nextPatch.points = Number(playerPatch.points) || 0
   if ('joinedAt' in playerPatch) nextPatch.joinedAt = normalizeTime(playerPatch.joinedAt)
   if ('lastSeen' in playerPatch) nextPatch.lastSeen = normalizeTime(playerPatch.lastSeen)
+  if ('lastSeenAt' in playerPatch) nextPatch.lastSeenAt = normalizeTime(playerPatch.lastSeenAt)
 
   return nextPatch
 }
@@ -706,6 +718,24 @@ function mergeRoomPatches(...patches) {
       next.playerPatches = playerPatches
     }
 
+    if (merged.joinRequestPatches || patch.joinRequestPatches) {
+      const joinRequestPatches = { ...(merged.joinRequestPatches || {}) }
+      Object.entries(patch.joinRequestPatches || {}).forEach(([playerId, requestPatch]) => {
+        joinRequestPatches[playerId] = {
+          ...(joinRequestPatches[playerId] || {}),
+          ...requestPatch,
+        }
+      })
+      next.joinRequestPatches = joinRequestPatches
+    }
+
+    if (merged.joinRequestDeletes || patch.joinRequestDeletes) {
+      next.joinRequestDeletes = [...new Set([
+        ...(merged.joinRequestDeletes || []),
+        ...(patch.joinRequestDeletes || []),
+      ])]
+    }
+
     if (merged.messageCreates || patch.messageCreates) {
       next.messageCreates = [
         ...(merged.messageCreates || []),
@@ -735,6 +765,7 @@ function normalizeMessage(message = {}) {
 
   if (!normalized.system) {
     normalized.playerId = message.playerId || ''
+    normalized.uid = message.uid || ''
     normalized.name = message.name || 'Player'
     normalized.avatar = message.avatar || avatarPresets[0].id
   }
@@ -789,9 +820,24 @@ function mergePlayerPatches(players, playerPatches) {
   return nextPlayers
 }
 
+function mergeJoinRequestPatches(joinRequests, joinRequestPatches) {
+  if (!joinRequestPatches) return joinRequests
+
+  const nextJoinRequests = { ...joinRequests }
+  Object.entries(joinRequestPatches).forEach(([playerId, requestPatch]) => {
+    nextJoinRequests[playerId] = normalizeJoinRequest({
+      ...(nextJoinRequests[playerId] || {}),
+      ...requestPatch,
+    })
+  })
+  return nextJoinRequests
+}
+
 function applyRoomPatch(currentRoom, patch) {
   const {
     historyCreates = [],
+    joinRequestDeletes = [],
+    joinRequestPatches,
     messageCreates = [],
     playerDeletes = [],
     playerPatches,
@@ -809,6 +855,15 @@ function applyRoomPatch(currentRoom, patch) {
     })
   }
   if (playerPatches) nextRoom.players = mergePlayerPatches(nextRoom.players, playerPatches)
+  if (roomPatch.joinRequests) nextRoom.joinRequests = normalizeJoinRequests(roomPatch.joinRequests)
+  if (joinRequestDeletes.length) {
+    joinRequestDeletes.forEach((playerId) => {
+      delete nextRoom.joinRequests[playerId]
+    })
+  }
+  if (joinRequestPatches) {
+    nextRoom.joinRequests = mergeJoinRequestPatches(nextRoom.joinRequests, joinRequestPatches)
+  }
   if (messageCreates.length) nextRoom.messages = appendMessages(currentRoom.messages, ...messageCreates)
   if (historyCreates.length) nextRoom.history = appendHistory(currentRoom.history, ...historyCreates)
 
@@ -883,6 +938,10 @@ function messageFromDoc(snapshot) {
   })
 }
 
+function joinRequestFromDoc(snapshot) {
+  return normalizeJoinRequest(snapshot.data())
+}
+
 function matchFromDoc(snapshot) {
   return normalizeMatch({
     id: snapshot.id,
@@ -902,6 +961,7 @@ function writeRoomPatchToTransaction(transaction, roomCode, patch) {
     transaction.set(roomRef, {
       ...roomPatch,
       ...ttl,
+      lastActiveAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     }, { merge: true })
   }
@@ -918,7 +978,9 @@ function writeRoomPatchToTransaction(transaction, roomCode, patch) {
     Object.entries(normalizePlayers(patch.players)).forEach(([playerId, player]) => {
       transaction.set(doc(db, 'rooms', roomCode, 'players', playerId), {
         ...player,
+        uid: player.uid || playerId,
         expireAt: ttl.expireAt,
+        ...(player.lastSeen ? { lastSeenAt: serverTimestamp() } : {}),
       }, { merge: true })
     })
   }
@@ -929,9 +991,41 @@ function writeRoomPatchToTransaction(transaction, roomCode, patch) {
       if (Object.keys(normalizedPatch).length > 0) {
         transaction.set(doc(db, 'rooms', roomCode, 'players', playerId), {
           ...normalizedPatch,
+          uid: normalizedPatch.uid || playerId,
           expireAt: ttl.expireAt,
+          ...(normalizedPatch.lastSeen ? { lastSeenAt: serverTimestamp() } : {}),
         }, { merge: true })
       }
+    })
+  }
+
+  if (patch.joinRequests) {
+    Object.entries(normalizeJoinRequests(patch.joinRequests)).forEach(([playerId, request]) => {
+      transaction.set(doc(db, 'rooms', roomCode, 'joinRequests', playerId), {
+        ...request,
+        uid: request.uid || playerId,
+        expireAt: ttl.expireAt,
+      }, { merge: true })
+    })
+  }
+
+  if (patch.joinRequestPatches) {
+    Object.entries(patch.joinRequestPatches).forEach(([playerId, requestPatch]) => {
+      const request = normalizeJoinRequest({
+        uid: playerId,
+        ...requestPatch,
+      })
+      transaction.set(doc(db, 'rooms', roomCode, 'joinRequests', playerId), {
+        ...request,
+        uid: request.uid || playerId,
+        expireAt: ttl.expireAt,
+      }, { merge: true })
+    })
+  }
+
+  if (patch.joinRequestDeletes?.length) {
+    patch.joinRequestDeletes.forEach((playerId) => {
+      transaction.delete(doc(db, 'rooms', roomCode, 'joinRequests', playerId))
     })
   }
 
@@ -945,6 +1039,7 @@ function writeRoomPatchToTransaction(transaction, roomCode, patch) {
     patch.messageCreates.map(normalizeMessage).forEach((message) => {
       transaction.set(doc(db, 'rooms', roomCode, 'messages', message.id), {
         ...message,
+        ...(!message.system ? { uid: message.uid || message.playerId } : {}),
         expireAt: ttl.expireAt,
       })
     })
@@ -983,6 +1078,7 @@ function writeFreshRoomToTransaction(transaction, roomCode, currentPlayer, optio
     joinRequests: {},
     locked: false,
     createdAt: serverTimestamp(),
+    lastActiveAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   })
   transaction.set(gameStateRef, {
@@ -996,12 +1092,14 @@ function writeFreshRoomToTransaction(transaction, roomCode, currentPlayer, optio
       transaction.delete(doc(db, 'rooms', roomCode, 'players', playerId))
     })
   transaction.set(playerRef, {
+    uid: currentPlayer.uid || currentPlayer.id,
     name: currentPlayer.name,
     avatar: currentPlayer.avatar,
     ready: false,
     points: 0,
     joinedAt: now,
     lastSeen: now,
+    lastSeenAt: serverTimestamp(),
     expireAt: ttl.expireAt,
   })
 
@@ -1188,6 +1286,7 @@ function currentPlayerPresencePatch(room, currentPlayer, now = Date.now()) {
   return {
     playerPatches: {
       [currentPlayer.id]: {
+        uid: currentPlayer.uid || currentPlayer.id,
         name: currentPlayer.name,
         avatar: currentPlayer.avatar,
         joinedAt: existingPlayer.joinedAt || now,
@@ -1833,6 +1932,8 @@ function PlayRoom() {
 
 function GameRoom() {
   const [currentPlayer, setCurrentPlayer] = useState(getStoredPlayer)
+  const [authUser, setAuthUser] = useState(() => auth?.currentUser || null)
+  const [authReady, setAuthReady] = useState(!isFirebaseConfigured)
   const [room, setRoom] = useState(() => createInitialRoom(
     getInitialRoomCode(),
     currentPlayer.name ? currentPlayer : null,
@@ -1846,6 +1947,7 @@ function GameRoom() {
   const [syncError, setSyncError] = useState('')
   const [presenceNow, setPresenceNow] = useState(Date.now)
   const [rejoinGraceUntil, setRejoinGraceUntil] = useState(0)
+  const authUid = authUser?.uid || ''
   const { game, history, messages, players, prompt, reactions, roomCode, round, session } = room
   const currentKickRecord = room.kickedPlayers?.[currentPlayer.id]
   const currentJoinRequest = room.joinRequests?.[currentPlayer.id]
@@ -1899,12 +2001,51 @@ function GameRoom() {
   }, [hasJoined])
 
   useEffect(() => {
-    if (!hasJoined || !isFirebaseConfigured || currentPlayerLockedOut) return undefined
+    if (!isFirebaseConfigured || !auth) return undefined
+
+    let cancelled = false
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      if (cancelled || !user) return
+      setAuthUser(user)
+      setAuthReady(true)
+      setCurrentPlayer((storedPlayer) => {
+        const nextPlayer = {
+          ...storedPlayer,
+          id: user.uid,
+          uid: user.uid,
+        }
+        savePlayer(nextPlayer)
+        return nextPlayer
+      })
+    })
+
+    const signInTimer = window.setTimeout(() => {
+      if (cancelled || auth.currentUser) return
+      setSyncStatus('Signing in')
+      signInAnonymously(auth).catch((error) => {
+        if (cancelled) return
+        setAuthReady(false)
+        setSyncStatus('Offline')
+        setSyncError(formatSyncError(error))
+      })
+    }, 0)
+
+    return () => {
+      cancelled = true
+      window.clearTimeout(signInTimer)
+      unsubscribe()
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!hasJoined || !isFirebaseConfigured || !authReady || !authUid || currentPlayerLockedOut) return undefined
 
     const roomRef = doc(db, 'rooms', roomCode)
     const gameStateRef = doc(db, 'rooms', roomCode, 'gameState', gameStateDocId)
     const playerRef = doc(db, 'rooms', roomCode, 'players', currentPlayer.id)
     const playersRef = collection(db, 'rooms', roomCode, 'players')
+    const joinRequestRef = doc(db, 'rooms', roomCode, 'joinRequests', currentPlayer.id)
+    const joinRequestsRef = collection(db, 'rooms', roomCode, 'joinRequests')
     const messagesQuery = query(
       collection(db, 'rooms', roomCode, 'messages'),
       orderBy('createdAt', 'desc'),
@@ -1924,6 +2065,7 @@ function GameRoom() {
         const snapshot = await transaction.get(roomRef)
         const gameStateSnapshot = await transaction.get(gameStateRef)
         const playerSnapshot = await transaction.get(playerRef)
+        const joinRequestSnapshot = await transaction.get(joinRequestRef)
         const roomData = snapshot.exists() ? snapshot.data() : {}
         const currentHostId = roomData.hostId || currentPlayer.id
         const hostRef = doc(db, 'rooms', roomCode, 'players', currentHostId)
@@ -1995,6 +2137,9 @@ function GameRoom() {
           ? normalizePlayer(playerSnapshot.data())
           : maintainedRoom.players[currentPlayer.id]
         const joinRequests = maintainedRoom.joinRequests
+        if (joinRequestSnapshot.exists()) {
+          joinRequests[currentPlayer.id] = normalizeJoinRequest(joinRequestSnapshot.data())
+        }
         const currentRequest = joinRequests[currentPlayer.id]
         const isExistingMember = Boolean(maintainedRoom.players[currentPlayer.id])
         const requestIsApproved = currentRequest?.status === 'accepted'
@@ -2004,25 +2149,16 @@ function GameRoom() {
           && maintainedRoom.hostId !== currentPlayer.id
 
         if (shouldRequestToJoin) {
-          transaction.set(roomRef, {
-            roomCode,
-            schemaVersion: roomSchemaVersion,
-            hostId: maintainedRoom.hostId,
-            locked: maintainedRoom.locked,
-            joinRequests: {
-              ...joinRequests,
-              [currentPlayer.id]: currentRequest?.status === 'pending'
-                ? {
-                    ...currentRequest,
-                    name: currentPlayer.name,
-                    avatar: currentPlayer.avatar,
-                  }
-                : createJoinRequest(currentPlayer, currentRequest),
-            },
-            expiresAt: currentExpiresAt,
-            resetAt: maintainedRoom.resetAt,
+          transaction.set(joinRequestRef, {
+            ...(currentRequest?.status === 'pending'
+              ? {
+                  ...currentRequest,
+                  uid: currentPlayer.uid || currentPlayer.id,
+                  name: currentPlayer.name,
+                  avatar: currentPlayer.avatar,
+                }
+              : createJoinRequest(currentPlayer, currentRequest)),
             expireAt: ttl.expireAt,
-            updatedAt: serverTimestamp(),
           }, { merge: true })
           return
         }
@@ -2033,21 +2169,27 @@ function GameRoom() {
           hostId: maintainedRoom.hostId,
           ...(requestIsApproved
             ? {
-                joinRequests: {
-                  ...joinRequests,
-                  [currentPlayer.id]: {
-                    ...currentRequest,
-                    status: 'joined',
-                    joinedAt: now,
-                  },
-                },
+                lastActiveAt: serverTimestamp(),
               }
             : {}),
           expiresAt: currentExpiresAt,
           resetAt: maintainedRoom.resetAt,
           expireAt: ttl.expireAt,
+          lastActiveAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
         }, { merge: true })
+
+        if (requestIsApproved) {
+          transaction.set(joinRequestRef, {
+            ...currentRequest,
+            uid: currentPlayer.uid || currentPlayer.id,
+            name: currentPlayer.name,
+            avatar: currentPlayer.avatar,
+            status: 'joined',
+            joinedAt: now,
+            expireAt: ttl.expireAt,
+          }, { merge: true })
+        }
 
         if (!gameStateSnapshot.exists()) {
           transaction.set(gameStateRef, {
@@ -2063,7 +2205,9 @@ function GameRoom() {
             .forEach(([playerId, player]) => {
               transaction.set(doc(db, 'rooms', roomCode, 'players', playerId), {
                 ...player,
+                uid: player.uid || playerId,
                 expireAt: ttl.expireAt,
+                ...(player.lastSeen ? { lastSeenAt: serverTimestamp() } : {}),
               }, { merge: true })
             })
           ;(Array.isArray(roomData.messages) ? roomData.messages : [])
@@ -2089,12 +2233,14 @@ function GameRoom() {
         }
 
         transaction.set(playerRef, {
+          uid: currentPlayer.uid || currentPlayer.id,
           name: currentPlayer.name,
           avatar: currentPlayer.avatar,
           ready: existingPlayer?.ready || false,
           points: existingPlayer?.points || 0,
           joinedAt: existingPlayer?.joinedAt || now,
           lastSeen: now,
+          lastSeenAt: serverTimestamp(),
           expireAt: ttl.expireAt,
         }, { merge: true })
         shouldStartHeartbeat = true
@@ -2103,10 +2249,18 @@ function GameRoom() {
         if (cancelled || !shouldStartHeartbeat) return
         heartbeatId = window.setInterval(() => {
           setDoc(playerRef, {
+            uid: currentPlayer.uid || currentPlayer.id,
             name: currentPlayer.name,
             avatar: currentPlayer.avatar,
             lastSeen: Date.now(),
+            lastSeenAt: serverTimestamp(),
             expireAt: ttlFields(createRoomExpiry()).expireAt,
+          }, { merge: true }).catch(() => {
+            setSyncStatus('Reconnecting')
+          })
+          setDoc(roomRef, {
+            lastActiveAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
           }, { merge: true }).catch(() => {
             setSyncStatus('Reconnecting')
           })
@@ -2179,6 +2333,31 @@ function GameRoom() {
         },
       ),
       onSnapshot(
+        joinRequestsRef,
+        { includeMetadataChanges: true },
+        (snapshot) => {
+          const nextJoinRequests = Object.fromEntries(
+            snapshot.docs.map((requestSnapshot) => [
+              requestSnapshot.id,
+              joinRequestFromDoc(requestSnapshot),
+            ]),
+          )
+          setRoom((currentRoom) => normalizeRoom({
+            ...currentRoom,
+            joinRequests: Object.fromEntries(
+              Object.entries(nextJoinRequests).filter(([, request]) => (
+                request.requestedAt >= currentRoom.resetAt
+              )),
+            ),
+          }, roomCode))
+          markSnapshot(snapshot)
+        },
+        (error) => {
+          setSyncStatus('Offline')
+          setSyncError(formatSyncError(error))
+        },
+      ),
+      onSnapshot(
         messagesQuery,
         { includeMetadataChanges: true },
         (snapshot) => {
@@ -2217,10 +2396,11 @@ function GameRoom() {
       unsubscribers.forEach((unsubscribe) => unsubscribe())
       window.clearInterval(heartbeatId)
     }
-  }, [currentPlayer, currentPlayerLockedOut, hasJoined, roomCode])
+  }, [authReady, authUid, currentPlayer, currentPlayerLockedOut, hasJoined, roomCode])
 
   useEffect(() => {
     if (!hasJoined || currentPlayerLockedOut || currentPlayerNeedsAdmission) return undefined
+    if (isFirebaseConfigured && (!authReady || !authUid)) return undefined
 
     const maintenancePatch = createRoomMaintenancePatch(room, presenceNow, {
       keepPlayerId: currentPlayer.id,
@@ -2296,6 +2476,8 @@ function GameRoom() {
       cancelled = true
     }
   }, [
+    authReady,
+    authUid,
     currentPlayer,
     currentPlayerLockedOut,
     currentPlayerNeedsAdmission,
@@ -2309,6 +2491,10 @@ function GameRoom() {
   function mutateRoom(createPatch, { hostOnly = false } = {}) {
     if (currentPlayerLockedOut) return
     if (hostOnly && !canControlRoom) return
+    if (isFirebaseConfigured && (!authReady || !authUid)) {
+      setSyncStatus('Signing in')
+      return
+    }
 
     if (!isFirebaseConfigured) {
       setRoom((currentRoom) => {
@@ -2385,8 +2571,19 @@ function GameRoom() {
     const name = joinName.trim().slice(0, 24)
     const code = sanitizeRoomCode(joinCode)
     if (!name || code.length < 4) return
+    if (isFirebaseConfigured && !authUid) {
+      setSyncStatus('Signing in')
+      setSyncError('Signing in anonymously. Try joining again in a moment.')
+      return
+    }
 
-    const nextPlayer = { ...currentPlayer, name, avatar: joinAvatar }
+    const nextPlayer = {
+      ...currentPlayer,
+      id: authUid || currentPlayer.id,
+      uid: authUid || currentPlayer.uid || currentPlayer.id,
+      name,
+      avatar: joinAvatar,
+    }
     savePlayer(nextPlayer)
     setCurrentPlayer(nextPlayer)
     setRoom(createInitialRoom(code, nextPlayer))
@@ -2428,8 +2625,7 @@ function GameRoom() {
       if (kick?.blocked || currentRoom.players[currentPlayer.id]) return {}
 
       return {
-        joinRequests: {
-          ...currentRoom.joinRequests,
+        joinRequestPatches: {
           [currentPlayer.id]: createJoinRequest(
             currentPlayer,
             currentRoom.joinRequests[currentPlayer.id],
@@ -2449,10 +2645,10 @@ function GameRoom() {
       const now = Date.now()
 
       return {
-        joinRequests: {
-          ...currentRoom.joinRequests,
+        joinRequestPatches: {
           [currentPlayer.id]: {
             ...request,
+            uid: currentPlayer.uid || currentPlayer.id,
             name: currentPlayer.name,
             avatar: currentPlayer.avatar,
             status: 'joined',
@@ -2461,6 +2657,7 @@ function GameRoom() {
         },
         playerPatches: {
           [currentPlayer.id]: {
+            uid: currentPlayer.uid || currentPlayer.id,
             name: currentPlayer.name,
             avatar: currentPlayer.avatar,
             ready: false,
@@ -2490,8 +2687,7 @@ function GameRoom() {
       if (!request || request.status !== 'pending' || currentRoom.kickedPlayers[playerId]?.blocked) return {}
 
       return {
-        joinRequests: {
-          ...currentRoom.joinRequests,
+        joinRequestPatches: {
           [playerId]: {
             ...request,
             status: 'accepted',
@@ -2508,8 +2704,7 @@ function GameRoom() {
       if (!request || request.status !== 'pending') return {}
 
       return {
-        joinRequests: {
-          ...currentRoom.joinRequests,
+        joinRequestPatches: {
           [playerId]: {
             ...request,
             status: 'rejected',
@@ -2871,6 +3066,7 @@ function GameRoom() {
       messageCreates: [{
         id: createEventId(),
         playerId: currentPlayer.id,
+        uid: currentPlayer.uid || currentPlayer.id,
         name: currentPlayer.name,
         avatar: currentPlayer.avatar,
         text: cleanText,

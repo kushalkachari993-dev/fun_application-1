@@ -13,11 +13,12 @@ npm.cmd run dev
 
 The Game Room works in local demo mode without Firebase config. With Firebase enabled, friends can join from separate devices, choose avatars, ready up, chat live, keep score, save match history, and play synchronized party rounds, Chess, or Ludo.
 
-Room data is split across Firestore subcollections so chat, players, game state, and match history can update independently:
+Room data is split across Firestore subcollections so chat, players, join requests, game state, and match history can update independently:
 
 ```txt
 rooms/{roomId}
 rooms/{roomId}/players/{playerId}
+rooms/{roomId}/joinRequests/{playerId}
 rooms/{roomId}/messages/{messageId}
 rooms/{roomId}/gameState/current
 rooms/{roomId}/history/{matchId}
@@ -27,7 +28,7 @@ Chat queries only the latest 60 messages, and match history queries only the lat
 
 Hosts can remove non-host players from the room. Each removal adds one strike in `rooms/{roomId}.kickedPlayers`. Strike 1 and 2 remove the player from the roster but let them rejoin; strike 3 blocks that player profile from the room permanently. Kicked players are also cleared from Chess/Ludo seats and current scores.
 
-Hosts can also lock a room. Locked rooms use `rooms/{roomId}.joinRequests` so new players must request access. Hosts can accept or reject pending requests; rejected players can request again later, while permanently blocked players cannot.
+Hosts can also lock a room. Locked rooms use `rooms/{roomId}/joinRequests/{playerId}` so new players must request access. Hosts can accept or reject pending requests; rejected players can request again later, while permanently blocked players cannot.
 
 Rooms are created with a 24-hour cleanup timer. The room document stores `expiresAt` for the UI and `expireAt` as a Firestore timestamp. Player, message, game state, and history documents also receive `expireAt`, so you can later enable Firestore TTL policies for old room cleanup.
 
@@ -36,8 +37,9 @@ Rooms also self-heal during joins, room actions, and idle presence checks. Playe
 1. Create a Firebase project.
 2. Add a Web App in Firebase project settings.
 3. Create a Cloud Firestore database.
-4. Copy `.env.example` to `.env`.
-5. Fill in the Firebase values:
+4. Enable Authentication -> Sign-in method -> Anonymous.
+5. Copy `.env.example` to `.env`.
+6. Fill in the Firebase values:
 
 ```bash
 VITE_FIREBASE_API_KEY=your_api_key
@@ -55,9 +57,9 @@ If the Game Room badge says `Offline`, check the message below it:
 - `Failed to get document because the client is offline.` usually means the browser/network cannot reach Firestore, Firestore Database is not created, or the Firebase project/env values do not match. The app enables Firestore long-polling auto detection to help on restricted networks.
 - `Missing or insufficient permissions` means your Firestore rules are blocking reads/writes.
 
-## Firestore Rules For Testing
+## Firestore Rules
 
-For a small friends-only test, publish the rules in `firestore.rules`.
+Publish the rules in `firestore.rules` after Anonymous Authentication is enabled. The rules require signed-in anonymous users, let players update only their own profile/presence, reserve host actions for the current host, and keep chat writes limited to room members.
 
 Firebase Console path:
 
@@ -71,22 +73,4 @@ Firebase CLI option:
 firebase deploy --only firestore:rules
 ```
 
-The testing rules are intentionally open for the whole room tree:
-
-```js
-rules_version = '2';
-
-service cloud.firestore {
-  match /databases/{database}/documents {
-    match /rooms/{roomId} {
-      allow read, write: if true;
-
-      match /{document=**} {
-        allow read, write: if true;
-      }
-    }
-  }
-}
-```
-
-These rules are convenient for testing, but public. Tighten them before sharing widely.
+If the app starts showing permission errors after this change, confirm both pieces are live: Anonymous Auth is enabled, and the latest `firestore.rules` has been published.
