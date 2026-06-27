@@ -405,6 +405,9 @@ function sanitizeRoomCode(value) {
 function formatSyncError(error) {
   const message = error?.message || String(error || '')
   const code = error?.code || ''
+  if (code === 'auth/configuration-not-found' || message.toLowerCase().includes('auth/configuration-not-found')) {
+    return 'Firebase Anonymous Authentication is not enabled. Open Firebase Console > Authentication > Sign-in method and enable Anonymous.'
+  }
   if (code === 'permission-denied' || message.toLowerCase().includes('missing or insufficient permissions')) {
     return 'Firebase rules are blocking this room. Open Firebase Console > Firestore Database > Rules and publish the rules from firestore.rules.'
   }
