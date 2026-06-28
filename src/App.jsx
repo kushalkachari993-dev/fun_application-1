@@ -24,6 +24,9 @@ import {
   Timestamp,
 } from 'firebase/firestore'
 import {
+  httpsCallable,
+} from 'firebase/functions'
+import {
   onAuthStateChanged,
   signInAnonymously,
 } from 'firebase/auth'
@@ -63,7 +66,7 @@ import './App.css'
 import './polish.css'
 import { avatarPresets } from './avatars'
 import { ChessGame, LudoGame } from './BoardGames'
-import { auth, db, isFirebaseConfigured } from './firebase'
+import { auth, db, functions as cloudFunctions, isFirebaseConfigured } from './firebase'
 import {
   AvatarPicker,
   PlayerRoster,
@@ -315,6 +318,8 @@ const wouldYouRatherPrompts = [
 
 const roomGames = ['Truth or Dare', "Who's Most Likely To", 'Would You Rather', 'Chess', 'Ludo']
 const promptRoomGames = roomGames.slice(0, 3)
+const aiToneOptions = ['Sweet', 'Funny', 'Sincere', 'Chaotic', 'Wholesome']
+const aiBudgetOptions = ['Low', 'Medium', 'High']
 const playerStorageKey = 'just-for-fun-player'
 const chatMessageLimit = 60
 const matchHistoryLimit = 12
@@ -428,6 +433,35 @@ function formatSyncError(error) {
     return 'Firestore is unreachable. Check that the database exists and your Firebase .env values match this project.'
   }
   return message
+}
+
+async function ensureAnonymousUser() {
+  if (!isFirebaseConfigured || !auth || !cloudFunctions) {
+    throw new Error('Firebase Functions are not configured for AI tools.')
+  }
+
+  if (auth.currentUser) return auth.currentUser
+
+  const credential = await signInAnonymously(auth)
+  return credential.user
+}
+
+async function generateAiRelationshipContent(tool, answers) {
+  await ensureAnonymousUser()
+  const generate = httpsCallable(cloudFunctions, 'generateRelationshipTool')
+  const result = await generate({ tool, answers })
+  return result.data || {}
+}
+
+function formatAiError(error) {
+  const message = formatSyncError(error)
+  if (message.includes('GROQ_API_KEY')) {
+    return 'Groq is not connected yet. Set the GROQ_API_KEY Firebase Functions secret and deploy functions.'
+  }
+  if (message.includes('Firebase Functions are not configured')) {
+    return 'Firebase Functions are not configured. Add Firebase env values before using AI tools.'
+  }
+  return message || 'AI generation failed. Try again in a moment.'
 }
 
 function getInitialRoomCode() {
@@ -1533,6 +1567,27 @@ function FriendshipTracker() {
 
 function ApologyGenerator() {
   const [apology, setApology] = useState(apologies[0])
+  const [aiSituation, setAiSituation] = useState('')
+  const [aiTone, setAiTone] = useState('Sincere')
+  const [aiLoading, setAiLoading] = useState(false)
+  const [aiError, setAiError] = useState('')
+
+  async function generateAiApology() {
+    setAiLoading(true)
+    setAiError('')
+    try {
+      const result = await generateAiRelationshipContent('apology', {
+        recipient: 'girlfriend',
+        situation: aiSituation,
+        tone: aiTone,
+      })
+      if (result.text) setApology(result.text)
+    } catch (error) {
+      setAiError(formatAiError(error))
+    } finally {
+      setAiLoading(false)
+    }
+  }
 
   return (
     <GeneratorPage
@@ -1540,12 +1595,67 @@ function ApologyGenerator() {
       text={apology}
       buttonText="Generate Sorry"
       onGenerate={() => setApology(randomItem(apologies, apology))}
-    />
+    >
+      <AiAssistPanel
+        title="Custom apology"
+        buttonText="Write with AI"
+        loading={aiLoading}
+        error={aiError}
+        onGenerate={generateAiApology}
+        fields={[
+          {
+            id: 'tone',
+            label: 'Tone',
+            type: 'select',
+            value: aiTone,
+            onChange: setAiTone,
+            options: aiToneOptions,
+          },
+          {
+            id: 'situation',
+            label: 'Situation',
+            value: aiSituation,
+            onChange: setAiSituation,
+            placeholder: 'What happened?',
+            maxLength: 300,
+          },
+        ]}
+      />
+    </GeneratorPage>
   )
 }
 
 function DateSpinner() {
   const [plan, setPlan] = useState(datePlans[0])
+  const [aiBudget, setAiBudget] = useState('Medium')
+  const [aiContext, setAiContext] = useState('')
+  const [aiMood, setAiMood] = useState('Cozy')
+  const [aiLoading, setAiLoading] = useState(false)
+  const [aiError, setAiError] = useState('')
+
+  async function generateAiDatePlan() {
+    setAiLoading(true)
+    setAiError('')
+    try {
+      const result = await generateAiRelationshipContent('datePlan', {
+        budget: aiBudget,
+        context: aiContext,
+        mood: aiMood,
+      })
+      if (result.title && Array.isArray(result.steps)) {
+        setPlan({
+          title: result.title,
+          budget: result.budget || aiBudget.toLowerCase(),
+          vibe: result.vibe || 'Thoughtful and easy to enjoy.',
+          steps: result.steps,
+        })
+      }
+    } catch (error) {
+      setAiError(formatAiError(error))
+    } finally {
+      setAiLoading(false)
+    }
+  }
 
   return (
     <ToolPage>
@@ -1565,6 +1675,39 @@ function DateSpinner() {
           <Dice5 size={17} />
           Spin plan
         </button>
+        <AiAssistPanel
+          title="Custom date plan"
+          buttonText="Plan with AI"
+          loading={aiLoading}
+          error={aiError}
+          onGenerate={generateAiDatePlan}
+          fields={[
+            {
+              id: 'budget',
+              label: 'Budget',
+              type: 'select',
+              value: aiBudget,
+              onChange: setAiBudget,
+              options: aiBudgetOptions,
+            },
+            {
+              id: 'mood',
+              label: 'Mood',
+              type: 'select',
+              value: aiMood,
+              onChange: setAiMood,
+              options: ['Cozy', 'Funny', 'Romantic', 'Adventurous', 'Lazy'],
+            },
+            {
+              id: 'context',
+              label: 'Place or idea',
+              value: aiContext,
+              onChange: setAiContext,
+              placeholder: 'City, time, food craving, or constraint',
+              maxLength: 300,
+            },
+          ]}
+        />
       </section>
     </ToolPage>
   )
@@ -3455,10 +3598,52 @@ function GamePanel({ label, title, description, onPrimary, primaryText, extra })
   )
 }
 
+function AiAssistPanel({ buttonText, disabled = false, error, fields, loading, onGenerate, title }) {
+  return (
+    <div className="ai-tool-panel">
+      <div className="ai-tool-heading">
+        <span className="mini-label">Groq AI</span>
+        <strong>{title}</strong>
+      </div>
+      <div className="ai-tool-fields">
+        {fields.map((field) => (
+          <label key={field.id}>
+            {field.label}
+            {field.type === 'select' ? (
+              <select value={field.value} onChange={(event) => field.onChange(event.target.value)}>
+                {field.options.map((option) => (
+                  <option value={option} key={option}>{option}</option>
+                ))}
+              </select>
+            ) : (
+              <textarea
+                rows={field.rows || 3}
+                maxLength={field.maxLength || 240}
+                value={field.value}
+                onChange={(event) => field.onChange(event.target.value)}
+                placeholder={field.placeholder}
+              />
+            )}
+          </label>
+        ))}
+      </div>
+      <button type="button" disabled={disabled || loading} onClick={onGenerate}>
+        <Sparkles size={17} />
+        {loading ? 'Thinking...' : buttonText}
+      </button>
+      {error && <p className="ai-tool-error">{error}</p>}
+    </div>
+  )
+}
+
 function ComplimentGenerator() {
   const [mode, setMode] = useState('Girlfriend')
   const [compliment, setCompliment] = useState(compliments[0])
   const [luckyNumber, setLuckyNumber] = useState(97)
+  const [aiDetails, setAiDetails] = useState('')
+  const [aiTone, setAiTone] = useState('Sweet')
+  const [aiLoading, setAiLoading] = useState(false)
+  const [aiError, setAiError] = useState('')
 
   function generateCompliment() {
     const list = mode === 'Girlfriend' ? compliments : friendCompliments
@@ -3470,6 +3655,26 @@ function ComplimentGenerator() {
     setMode(nextMode)
     setCompliment(nextMode === 'Girlfriend' ? compliments[0] : friendCompliments[0])
     setLuckyNumber(97)
+  }
+
+  async function generateAiCompliment() {
+    setAiLoading(true)
+    setAiError('')
+    try {
+      const result = await generateAiRelationshipContent('compliment', {
+        recipient: mode.toLowerCase(),
+        details: aiDetails,
+        tone: aiTone,
+      })
+      if (result.text) {
+        setCompliment(result.text)
+        setLuckyNumber(Math.floor(Math.random() * 8) + 92)
+      }
+    } catch (error) {
+      setAiError(formatAiError(error))
+    } finally {
+      setAiLoading(false)
+    }
   }
 
   return (
@@ -3492,12 +3697,38 @@ function ComplimentGenerator() {
         buttonText="Generate Compliment"
         onGenerate={generateCompliment}
         embedded
-      />
+      >
+        <AiAssistPanel
+          title="Personal compliment"
+          buttonText="Write with AI"
+          loading={aiLoading}
+          error={aiError}
+          onGenerate={generateAiCompliment}
+          fields={[
+            {
+              id: 'tone',
+              label: 'Tone',
+              type: 'select',
+              value: aiTone,
+              onChange: setAiTone,
+              options: aiToneOptions,
+            },
+            {
+              id: 'details',
+              label: 'Details',
+              value: aiDetails,
+              onChange: setAiDetails,
+              placeholder: 'One thing you like about them',
+              maxLength: 300,
+            },
+          ]}
+        />
+      </GeneratorPage>
     </ToolPage>
   )
 }
 
-function GeneratorPage({ label, text, buttonText, onGenerate, embedded = false }) {
+function GeneratorPage({ children, label, text, buttonText, onGenerate, embedded = false }) {
   const [copied, setCopied] = useState(false)
 
   function copyText() {
@@ -3520,6 +3751,7 @@ function GeneratorPage({ label, text, buttonText, onGenerate, embedded = false }
           {copied ? 'Copied' : 'Copy Text'}
         </button>
       </div>
+      {children}
     </section>
   )
 

@@ -6,10 +6,31 @@ A playful React + Vite hangout app for friends, mini games, chaos mode, shared r
 
 ```bash
 npm.cmd install
+npm.cmd install --prefix functions
 npm.cmd run dev
 ```
 
 Every push and pull request runs `npm ci`, `npm run lint`, and `npm run build` through GitHub Actions.
+
+## Groq AI Tools
+
+The Apology, Compliment, and Date Plan tools can generate custom ideas with Groq through a Firebase callable function. The React app never stores the Groq API key.
+
+The function uses:
+
+```txt
+model: llama-3.3-70b-versatile
+endpoint: https://api.groq.com/openai/v1/chat/completions
+```
+
+Set the API key as a Firebase Functions secret:
+
+```bash
+firebase functions:secrets:set GROQ_API_KEY
+firebase deploy --only functions
+```
+
+The callable function requires Firebase Anonymous Authentication, so keep Anonymous sign-in enabled. If an AI tool says Groq is not connected, confirm the `GROQ_API_KEY` secret is set and the functions deploy succeeded.
 
 ## Firebase Game Room Sync
 

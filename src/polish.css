@@ -739,6 +739,89 @@ button:active {
   line-height: 1.12;
 }
 
+.ai-tool-panel {
+  display: grid;
+  gap: 14px;
+  margin-top: 24px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+
+.ai-tool-heading {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.ai-tool-heading strong {
+  color: var(--ink);
+  font-size: 14px;
+}
+
+.ai-tool-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.ai-tool-fields label {
+  display: grid;
+  min-width: 0;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 850;
+}
+
+.ai-tool-fields label:last-child {
+  grid-column: 1 / -1;
+}
+
+.ai-tool-fields select,
+.ai-tool-fields textarea {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 11px;
+  color: var(--ink);
+  background: #fff;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.ai-tool-fields textarea {
+  resize: vertical;
+}
+
+.ai-tool-fields select:focus,
+.ai-tool-fields textarea:focus {
+  border-color: #8dbdb5;
+  outline: 3px solid rgba(23, 107, 98, 0.14);
+}
+
+.ai-tool-panel > button {
+  justify-self: start;
+  margin-top: 0;
+}
+
+.date-card .ai-tool-panel > button {
+  margin-top: 0;
+}
+
+.ai-tool-error {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid #f0c5c5;
+  border-radius: 8px;
+  color: #a74646;
+  background: #fff4f4;
+  font-size: 12px;
+  font-weight: 800;
+}
+
 .date-card h2,
 .secret-card h2,
 .mission-card h2 {
@@ -2282,6 +2365,20 @@ button:active {
 
   .avatar-picker > div {
     grid-template-columns: repeat(3, 1fr);
+  }
+
+  .ai-tool-heading {
+    align-items: start;
+    flex-direction: column;
+  }
+
+  .ai-tool-fields {
+    grid-template-columns: 1fr;
+  }
+
+  .ai-tool-panel > button {
+    width: 100%;
+    min-height: 44px;
   }
 
   .session-controls {
