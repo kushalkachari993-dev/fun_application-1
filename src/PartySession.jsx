@@ -142,6 +142,7 @@ export function PlayerRoster({
   currentPlayerId,
   hostId,
   isHost,
+  panelId,
   playerEntries,
   pendingRequests = [],
   presenceNow,
@@ -155,7 +156,7 @@ export function PlayerRoster({
   presenceTimeoutMs = 120000,
 }) {
   return (
-    <aside className="players-panel">
+    <aside className="players-panel" id={panelId}>
       <div className="panel-heading">
         <div>
           <span className="mini-label">Party members</span>
@@ -277,7 +278,7 @@ function formatMessageTime(timestamp) {
   }).format(new Date(timestamp))
 }
 
-export function RoomSocialPanel({ currentPlayerId, history, messages, players, onSendMessage }) {
+export function RoomSocialPanel({ currentPlayerId, history, messages, players, panelId, onSendMessage }) {
   const [tab, setTab] = useState('chat')
   const [message, setMessage] = useState('')
   const messageListRef = useRef(null)
@@ -297,7 +298,7 @@ export function RoomSocialPanel({ currentPlayerId, history, messages, players, o
   }
 
   return (
-    <aside className="social-panel">
+    <aside className="social-panel" id={panelId}>
       <div className="social-tabs" aria-label="Room social views">
         <button className={tab === 'chat' ? 'active' : ''} type="button" onClick={() => setTab('chat')}>
           <MessageCircle size={16} />

@@ -41,6 +41,7 @@ import {
   Laugh,
   LockKeyhole,
   Menu,
+  MessageCircle,
   MessageCircleHeart,
   PartyPopper,
   Plus,
@@ -51,6 +52,7 @@ import {
   ShieldAlert,
   Sparkles,
   Target,
+  UserRound,
   WandSparkles,
   Wifi,
   WifiOff,
@@ -3267,6 +3269,21 @@ function GameRoom() {
           </div>
         </div>
 
+        <nav className="mobile-room-nav" aria-label="Room sections">
+          <a href="#room-game">
+            <Gamepad2 size={15} />
+            Game
+          </a>
+          <a href="#room-players">
+            <UserRound size={15} />
+            Players
+          </a>
+          <a href="#room-chat">
+            <MessageCircle size={15} />
+            Chat
+          </a>
+        </nav>
+
         <SessionControls
           allReady={allReady}
           currentPlayer={players[currentPlayer.id]}
@@ -3286,6 +3303,7 @@ function GameRoom() {
             currentPlayerId={currentPlayer.id}
             hostId={room.hostId}
             isHost={canControlRoom}
+            panelId="room-players"
             playerEntries={playerEntries}
             presenceNow={presenceNow}
             presenceTimeoutMs={playerPresenceTimeoutMs}
@@ -3299,7 +3317,7 @@ function GameRoom() {
             onTransferHost={transferHost}
           />
 
-          <section className="round-board">
+          <section className="round-board" id="room-game">
             <div className="room-tabs" aria-label="Game room games">
               {roomGames.map((option) => (
                 <button
@@ -3373,6 +3391,7 @@ function GameRoom() {
             currentPlayerId={currentPlayer.id}
             history={history}
             messages={messages}
+            panelId="room-chat"
             players={players}
             onSendMessage={sendChatMessage}
           />
