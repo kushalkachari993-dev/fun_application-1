@@ -79,6 +79,7 @@ export function SessionControls({
   onToggleReady,
 }) {
   const status = session.status || 'lobby'
+  const readinessPercent = playerCount ? Math.round((readyCount / playerCount) * 100) : 0
 
   return (
     <section className={`session-controls ${status}`}>
@@ -99,6 +100,11 @@ export function SessionControls({
                   : 'Match ended'
                 : `${readyCount} of ${playerCount} ready`}
           </strong>
+          {status === 'lobby' && (
+            <span className="ready-meter" aria-hidden="true">
+              <span style={{ width: `${readinessPercent}%` }} />
+            </span>
+          )}
         </div>
       </div>
 
@@ -155,17 +161,31 @@ export function PlayerRoster({
   onTransferHost,
   presenceTimeoutMs = 120000,
 }) {
+  const onlineCount = playerEntries.filter(([, player]) => (
+    presenceNow - (player.lastSeen || 0) < presenceTimeoutMs
+  )).length
+  const playerCountLabel = playerEntries.length
+    ? `${onlineCount}/${playerEntries.length} online`
+    : 'No players'
+
   return (
     <aside className="players-panel" id={panelId}>
       <div className="panel-heading">
         <div>
           <span className="mini-label">Party members</span>
-          <strong>{playerEntries.length} players</strong>
+          <strong>{playerCountLabel}</strong>
         </div>
         <UserRound size={18} />
       </div>
 
       <div className="player-list">
+        {playerEntries.length === 0 && (
+          <div className="player-empty-state">
+            <UserRound size={22} />
+            <strong>No members here</strong>
+            <span>Room sync is catching up.</span>
+          </div>
+        )}
         {playerEntries.map(([playerId, player]) => {
           const isOnline = presenceNow - (player.lastSeen || 0) < presenceTimeoutMs
           const score = session.scores?.[playerId] || 0
@@ -303,10 +323,12 @@ export function RoomSocialPanel({ currentPlayerId, history, messages, players, p
         <button className={tab === 'chat' ? 'active' : ''} type="button" onClick={() => setTab('chat')}>
           <MessageCircle size={16} />
           Chat
+          <span className="tab-count">{messages.length}</span>
         </button>
         <button className={tab === 'history' ? 'active' : ''} type="button" onClick={() => setTab('history')}>
           <History size={16} />
           History
+          <span className="tab-count">{history.length}</span>
         </button>
       </div>
 

@@ -1121,6 +1121,51 @@ button:active {
   scroll-margin-top: 110px;
 }
 
+.room-overview-strip {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.room-overview-item {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid #dce7eb;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.78);
+}
+
+.room-overview-item span {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 850;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.room-overview-item strong {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.room-overview-item.accent {
+  border-color: #c6e2da;
+  background: #f1faf7;
+}
+
+.room-overview-item.accent strong {
+  color: #176b62;
+}
+
 .room-layout {
   grid-template-columns: 268px minmax(0, 1fr);
   gap: 12px;
@@ -1208,6 +1253,23 @@ button:active {
   white-space: nowrap;
 }
 
+.ready-meter {
+  display: block;
+  width: min(220px, 100%);
+  height: 5px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #e7ecef;
+}
+
+.ready-meter span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #176b62;
+  transition: width 180ms ease;
+}
+
 .session-actions {
   display: flex;
   align-items: center;
@@ -1285,6 +1347,34 @@ button:active {
 .session-player.ready {
   border-color: #c6e2da;
   background: #f1faf7;
+}
+
+.player-empty-state {
+  display: grid;
+  place-items: center;
+  min-height: 148px;
+  padding: 22px 16px;
+  border: 1px dashed #cfdadd;
+  border-radius: 8px;
+  color: #8c98a0;
+  background: #f8fafb;
+  text-align: center;
+}
+
+.player-empty-state svg {
+  margin-bottom: 7px;
+}
+
+.player-empty-state strong {
+  color: #53616b;
+  font-size: 13px;
+}
+
+.player-empty-state span {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.45;
 }
 
 .player-avatar {
@@ -1546,7 +1636,11 @@ button:active {
 }
 
 .social-tabs button {
+  display: inline-flex;
   min-height: 34px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   padding: 6px 9px;
   border-color: transparent;
   color: #66737d;
@@ -1562,6 +1656,24 @@ button:active {
   background: #fff;
   box-shadow: 0 3px 9px rgba(22, 34, 42, 0.05);
   transform: none;
+}
+
+.tab-count {
+  display: inline-grid;
+  place-items: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  color: #68757e;
+  background: #e6ecef;
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.social-tabs button.active .tab-count {
+  color: #176b62;
+  background: #dff1ec;
 }
 
 .chat-messages,
@@ -1985,6 +2097,10 @@ button:active {
     gap: 18px;
   }
 
+  .room-overview-strip {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
   .mobile-room-nav {
     position: sticky;
     top: 66px;
@@ -2208,6 +2324,18 @@ button:active {
   .room-layout {
     gap: 14px;
     margin-top: 14px;
+  }
+
+  .room-overview-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .room-overview-item {
+    padding: 9px 10px;
+  }
+
+  .room-overview-item.accent {
+    grid-column: 1 / -1;
   }
 
   .players-panel {

@@ -1840,10 +1840,25 @@ function GameRoom() {
     isPlayerActive(player, presenceNow)
   ))
   const nonHostPlayers = activePlayerEntries.filter(([playerId]) => playerId !== room.hostId)
-  const allReady = nonHostPlayers.every(([, player]) => player.ready)
+  const allReady = activePlayerEntries.length > 0 && nonHostPlayers.every(([, player]) => player.ready)
   const readyCount = activePlayerEntries.filter(([playerId, player]) => (
     playerId === room.hostId || player.ready
   )).length
+  const hostLabel = isHost
+    ? 'You'
+    : hostPlayer?.name || (hostIsAway ? 'Reassigning' : 'Open')
+  const accessLabel = pendingRequests.length
+    ? `${pendingRequests.length} pending`
+    : room.locked ? 'Locked' : 'Open'
+  const readyLabel = activePlayerEntries.length
+    ? `${readyCount}/${activePlayerEntries.length}`
+    : '0/0'
+  const livePlayerLabel = activePlayerEntries.length === 1
+    ? '1 live'
+    : `${activePlayerEntries.length} live`
+  const modeLabel = session.status === 'playing'
+    ? session.game
+    : game
   const winnerNames = session.winnerIds
     .map((playerId) => players[playerId]?.name)
     .filter(Boolean)
@@ -3148,6 +3163,7 @@ function GameRoom() {
               <strong>No account needed</strong>
               <span>Your name is remembered only in this browser.</span>
             </div>
+            {syncError && <p className="sync-error">{syncError}</p>}
           </div>
           <form className="join-room-form" onSubmit={joinRoom}>
             <label>
@@ -3283,6 +3299,29 @@ function GameRoom() {
             Chat
           </a>
         </nav>
+
+        <div className="room-overview-strip" aria-label="Room status">
+          <div className="room-overview-item">
+            <span>Host</span>
+            <strong>{hostLabel}</strong>
+          </div>
+          <div className="room-overview-item">
+            <span>Players</span>
+            <strong>{livePlayerLabel}</strong>
+          </div>
+          <div className="room-overview-item">
+            <span>Ready</span>
+            <strong>{readyLabel}</strong>
+          </div>
+          <div className="room-overview-item">
+            <span>Access</span>
+            <strong>{accessLabel}</strong>
+          </div>
+          <div className="room-overview-item accent">
+            <span>Game</span>
+            <strong>{modeLabel}</strong>
+          </div>
+        </div>
 
         <SessionControls
           allReady={allReady}
