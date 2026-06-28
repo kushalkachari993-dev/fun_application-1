@@ -24,9 +24,6 @@ import {
   Timestamp,
 } from 'firebase/firestore'
 import {
-  httpsCallable,
-} from 'firebase/functions'
-import {
   onAuthStateChanged,
   signInAnonymously,
 } from 'firebase/auth'
@@ -66,7 +63,7 @@ import './App.css'
 import './polish.css'
 import { avatarPresets } from './avatars'
 import { ChessGame, LudoGame } from './BoardGames'
-import { auth, db, functions as cloudFunctions, isFirebaseConfigured } from './firebase'
+import { auth, db, isFirebaseConfigured } from './firebase'
 import {
   AvatarPicker,
   PlayerRoster,
@@ -436,8 +433,8 @@ function formatSyncError(error) {
 }
 
 async function ensureAnonymousUser() {
-  if (!isFirebaseConfigured || !auth || !cloudFunctions) {
-    throw new Error('Firebase Functions are not configured for AI tools.')
+  if (!isFirebaseConfigured || !auth) {
+    throw new Error('Firebase Anonymous Authentication is required before using AI tools.')
   }
 
   if (auth.currentUser) return auth.currentUser
@@ -447,19 +444,40 @@ async function ensureAnonymousUser() {
 }
 
 async function generateAiRelationshipContent(tool, answers) {
-  await ensureAnonymousUser()
-  const generate = httpsCallable(cloudFunctions, 'generateRelationshipTool')
-  const result = await generate({ tool, answers })
-  return result.data || {}
+  const user = await ensureAnonymousUser()
+  const token = await user.getIdToken()
+  const response = await fetch('/api/generate-relationship-tool', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ tool, answers }),
+  })
+
+  let payload
+  try {
+    payload = await response.json()
+  } catch {
+    throw new Error('AI endpoint is not available. Deploy to Vercel or run the app with Vercel dev.')
+  }
+
+  if (!response.ok) {
+    const error = new Error(payload.error || 'AI generation failed. Try again in a moment.')
+    error.code = payload.code || `http/${response.status}`
+    throw error
+  }
+
+  return payload || {}
 }
 
 function formatAiError(error) {
   const message = formatSyncError(error)
   if (message.includes('GROQ_API_KEY')) {
-    return 'Groq is not connected yet. Set the GROQ_API_KEY Firebase Functions secret and deploy functions.'
+    return 'Groq is not connected yet. Add GROQ_API_KEY in Vercel Environment Variables and redeploy.'
   }
-  if (message.includes('Firebase Functions are not configured')) {
-    return 'Firebase Functions are not configured. Add Firebase env values before using AI tools.'
+  if (message.includes('Firebase Anonymous Authentication is required')) {
+    return 'Firebase Anonymous Authentication is required for AI tools. Add Firebase env values and enable Anonymous sign-in.'
   }
   return message || 'AI generation failed. Try again in a moment.'
 }

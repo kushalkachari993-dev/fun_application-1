@@ -6,31 +6,31 @@ A playful React + Vite hangout app for friends, mini games, chaos mode, shared r
 
 ```bash
 npm.cmd install
-npm.cmd install --prefix functions
 npm.cmd run dev
 ```
 
-Every push and pull request runs `npm ci`, `npm run lint`, and `npm run build` through GitHub Actions.
+Every push and pull request runs `npm ci`, `npm run lint`, `npm run test`, `npm run api:check`, and `npm run build` through GitHub Actions.
 
-## Groq AI Tools
+## Groq AI Tools on Vercel
 
-The Apology, Compliment, and Date Plan tools can generate custom ideas with Groq through a Firebase callable function. The React app never stores the Groq API key.
+The Apology, Compliment, and Date Plan tools can generate custom ideas with Groq through a Vercel Serverless Function at `/api/generate-relationship-tool`. The React app never stores the Groq API key.
 
-The function uses:
+The API function verifies the visitor's Firebase anonymous sign-in token before calling Groq, so keep Anonymous Authentication enabled. It uses:
 
 ```txt
 model: llama-3.3-70b-versatile
 endpoint: https://api.groq.com/openai/v1/chat/completions
 ```
 
-Set the API key as a Firebase Functions secret:
+Add the API key in Vercel:
 
-```bash
-firebase functions:secrets:set GROQ_API_KEY
-firebase deploy --only functions
-```
+1. Open Vercel -> Project -> Settings -> Environment Variables.
+2. Add `GROQ_API_KEY` with your Groq key.
+3. Redeploy the project.
 
-The callable function requires Firebase Anonymous Authentication, so keep Anonymous sign-in enabled. If an AI tool says Groq is not connected, confirm the `GROQ_API_KEY` secret is set and the functions deploy succeeded.
+The API also needs your Firebase project id at runtime. If `VITE_FIREBASE_PROJECT_ID` is already set in Vercel for the React app, that is enough. You can also add `FIREBASE_PROJECT_ID` as a server-side variable.
+
+For local AI testing, use Vercel dev with `GROQ_API_KEY` in your local environment. Plain `npm.cmd run dev` runs Vite only, so the `/api` function is not available there.
 
 ## Firebase Game Room Sync
 
