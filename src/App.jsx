@@ -74,6 +74,18 @@ import {
   restoreLudo,
   serializeLudo,
 } from './roomGameEngines'
+import {
+  createInitialSession,
+  createRoomMaintenancePatch,
+  isPlayerActive,
+  normalizePlayer,
+  normalizePlayerPatch,
+  normalizePlayers,
+  normalizeTime,
+  playerPresenceTimeoutMs,
+  removePlayerFromScores,
+  removePlayerFromSeats,
+} from './roomState'
 
 const girlfriendStatuses = [
   {
@@ -305,7 +317,6 @@ const playerStorageKey = 'just-for-fun-player'
 const chatMessageLimit = 60
 const matchHistoryLimit = 12
 const kickLimit = 3
-const playerPresenceTimeoutMs = 2 * 60 * 1000
 const roomLifetimeMs = 24 * 60 * 60 * 1000
 const roomSchemaVersion = 2
 const gameStateDocId = 'current'
@@ -496,18 +507,6 @@ function createInitialRoom(roomCode, player = null, now = Date.now()) {
   }
 }
 
-function createInitialSession() {
-  return {
-    status: 'lobby',
-    matchId: '',
-    game: '',
-    scores: {},
-    winnerIds: [],
-    startedAt: 0,
-    endedAt: 0,
-  }
-}
-
 function createEventId() {
   return window.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`
 }
@@ -527,12 +526,6 @@ function appendMessages(messages, ...nextMessages) {
 
 function appendHistory(history, ...nextMatches) {
   return [...(history || []), ...nextMatches.map(normalizeMatch)].slice(-matchHistoryLimit)
-}
-
-function normalizeTime(value) {
-  if (typeof value === 'number' && Number.isFinite(value)) return value
-  if (value?.toMillis) return value.toMillis()
-  return Number(value) || 0
 }
 
 function normalizeKickedPlayers(kickedPlayers) {
@@ -604,75 +597,6 @@ function createJoinRequest(player, previousRequest = null) {
     attempts: (previous?.attempts || 0) + 1,
     status: 'pending',
   }
-}
-
-function normalizePlayer(player = {}) {
-  return {
-    uid: player.uid || '',
-    name: player.name || 'Player',
-    avatar: player.avatar || avatarPresets[0].id,
-    ready: Boolean(player.ready),
-    points: Number(player.points) || 0,
-    joinedAt: normalizeTime(player.joinedAt),
-    lastSeen: normalizeTime(player.lastSeen),
-    lastSeenAt: normalizeTime(player.lastSeenAt),
-  }
-}
-
-function normalizePlayers(players) {
-  if (Array.isArray(players) || !players || typeof players !== 'object') return {}
-
-  return Object.fromEntries(
-    Object.entries(players).map(([playerId, player]) => [playerId, normalizePlayer(player)]),
-  )
-}
-
-function normalizePlayerPatch(playerPatch = {}) {
-  const nextPatch = {}
-
-  if ('name' in playerPatch) nextPatch.name = playerPatch.name || 'Player'
-  if ('uid' in playerPatch) nextPatch.uid = playerPatch.uid || ''
-  if ('avatar' in playerPatch) nextPatch.avatar = playerPatch.avatar || avatarPresets[0].id
-  if ('ready' in playerPatch) nextPatch.ready = Boolean(playerPatch.ready)
-  if ('points' in playerPatch) nextPatch.points = Number(playerPatch.points) || 0
-  if ('joinedAt' in playerPatch) nextPatch.joinedAt = normalizeTime(playerPatch.joinedAt)
-  if ('lastSeen' in playerPatch) nextPatch.lastSeen = normalizeTime(playerPatch.lastSeen)
-  if ('lastSeenAt' in playerPatch) nextPatch.lastSeenAt = normalizeTime(playerPatch.lastSeenAt)
-
-  return nextPatch
-}
-
-function isPlayerActive(player, now = Date.now()) {
-  return Boolean(player?.lastSeen) && now - (player.lastSeen || 0) < playerPresenceTimeoutMs
-}
-
-function isPlayerActiveForMaintenance(playerId, player, now, keepPlayerId = '') {
-  return playerId === keepPlayerId || isPlayerActive(player, now)
-}
-
-function chooseNextHostId(players, currentHostId = '', now = Date.now(), keepPlayerId = '', preferredHostId = '') {
-  if (
-    currentHostId
-    && players[currentHostId]
-    && isPlayerActiveForMaintenance(currentHostId, players[currentHostId], now, keepPlayerId)
-  ) {
-    return currentHostId
-  }
-
-  if (
-    preferredHostId
-    && players[preferredHostId]
-    && isPlayerActiveForMaintenance(preferredHostId, players[preferredHostId], now, keepPlayerId)
-  ) {
-    return preferredHostId
-  }
-
-  return Object.entries(players)
-    .filter(([playerId, player]) => isPlayerActiveForMaintenance(playerId, player, now, keepPlayerId))
-    .sort(([, firstPlayer], [, secondPlayer]) => (
-      (firstPlayer.joinedAt || firstPlayer.lastSeen || 0)
-      - (secondPlayer.joinedAt || secondPlayer.lastSeen || 0)
-    ))[0]?.[0] || ''
 }
 
 function playersFromQuerySnapshot(snapshot) {
@@ -1201,90 +1125,6 @@ function finishMatchPatch(room, winnerIds, scores = room.session.scores) {
     historyCreates: [match],
     messageCreates: [systemMessage(winnerText)],
   }
-}
-
-function removePlayerFromSeats(seats, playerId) {
-  return Object.fromEntries(
-    Object.entries(seats || {}).map(([seat, seatPlayerId]) => [
-      seat,
-      seatPlayerId === playerId ? '' : seatPlayerId,
-    ]),
-  )
-}
-
-function removePlayerFromScores(scores, playerId) {
-  const nextScores = { ...(scores || {}) }
-  delete nextScores[playerId]
-  return nextScores
-}
-
-function removePlayersFromRoomPatch(room, playerIds) {
-  const uniquePlayerIds = [...new Set(playerIds.filter(Boolean))]
-  if (uniquePlayerIds.length === 0) return {}
-
-  const nextScores = uniquePlayerIds.reduce(
-    (scores, playerId) => removePlayerFromScores(scores, playerId),
-    room.session.scores,
-  )
-  const patch = {
-    playerDeletes: uniquePlayerIds,
-    session: {
-      ...room.session,
-      scores: nextScores,
-      winnerIds: room.session.winnerIds.filter((winnerId) => !uniquePlayerIds.includes(winnerId)),
-    },
-  }
-
-  if (room.chess) {
-    patch.chess = {
-      ...room.chess,
-      seats: uniquePlayerIds.reduce(
-        (seats, playerId) => removePlayerFromSeats(seats, playerId),
-        room.chess.seats,
-      ),
-    }
-  }
-
-  if (room.ludo) {
-    patch.ludo = {
-      ...room.ludo,
-      seats: uniquePlayerIds.reduce(
-        (seats, playerId) => removePlayerFromSeats(seats, playerId),
-        room.ludo.seats,
-      ),
-    }
-  }
-
-  return patch
-}
-
-function createRoomMaintenancePatch(room, now = Date.now(), options = {}) {
-  const {
-    keepPlayerId = '',
-    preferredHostId = '',
-  } = options
-  const players = normalizePlayers(room.players)
-  const stalePlayerIds = Object.entries(players)
-    .filter(([playerId, player]) => playerId !== keepPlayerId && !isPlayerActive(player, now))
-    .map(([playerId]) => playerId)
-  const remainingPlayers = { ...players }
-  stalePlayerIds.forEach((playerId) => {
-    delete remainingPlayers[playerId]
-  })
-  const nextHostId = chooseNextHostId(
-    remainingPlayers,
-    room.hostId,
-    now,
-    keepPlayerId,
-    preferredHostId,
-  )
-  const patch = removePlayersFromRoomPatch(room, stalePlayerIds)
-
-  if (nextHostId !== room.hostId) {
-    patch.hostId = nextHostId
-  }
-
-  return patch
 }
 
 function currentPlayerPresencePatch(room, currentPlayer, now = Date.now()) {
