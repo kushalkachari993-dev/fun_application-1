@@ -11,6 +11,8 @@ import {
 import {
   Activity,
   BarChart3,
+  Bookmark,
+  BookmarkCheck,
   Check,
   ChevronRight,
   Copy,
@@ -27,6 +29,7 @@ import {
   ShieldAlert,
   Sparkles,
   Target,
+  Trash2,
   WandSparkles,
   X,
   Zap,
@@ -262,6 +265,7 @@ const wouldYouRatherPrompts = [
 
 const aiToneOptions = ['Sweet', 'Funny', 'Sincere', 'Chaotic', 'Wholesome']
 const aiBudgetOptions = ['Low', 'Medium', 'High']
+const savedResultsStorageKey = 'just-for-fun-saved-results'
 
 const pages = [
   {
@@ -343,6 +347,62 @@ function randomItem(items, current) {
     next = items[Math.floor(Math.random() * items.length)]
   }
   return next
+}
+
+function readSavedResults(tool) {
+  try {
+    const savedResults = JSON.parse(window.localStorage.getItem(savedResultsStorageKey)) || {}
+    return Array.isArray(savedResults[tool]) ? savedResults[tool] : []
+  } catch {
+    return []
+  }
+}
+
+function writeSavedResults(tool, results) {
+  try {
+    const savedResults = JSON.parse(window.localStorage.getItem(savedResultsStorageKey)) || {}
+    window.localStorage.setItem(savedResultsStorageKey, JSON.stringify({
+      ...savedResults,
+      [tool]: results,
+    }))
+  } catch {
+    // Saving is a convenience; generation and copy should still work.
+  }
+}
+
+function createSavedResult(tool, result) {
+  return {
+    id: window.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    tool,
+    savedAt: Date.now(),
+    ...result,
+  }
+}
+
+function useSavedResults(tool) {
+  const [savedResults, setSavedResults] = useState(() => readSavedResults(tool))
+
+  function saveResult(result) {
+    const savedResult = createSavedResult(tool, result)
+    setSavedResults((currentResults) => {
+      const nextResults = [
+        savedResult,
+        ...currentResults.filter((item) => item.preview !== savedResult.preview),
+      ].slice(0, 5)
+      writeSavedResults(tool, nextResults)
+      return nextResults
+    })
+  }
+
+  function removeSavedResult(id) {
+    setSavedResults((currentResults) => {
+      const nextResults = currentResults.filter((item) => item.id !== id)
+      writeSavedResults(tool, nextResults)
+      return nextResults
+    })
+  }
+
+  return { removeSavedResult, savedResults, saveResult }
 }
 
 function formatSyncError(error) {
@@ -790,6 +850,8 @@ function ApologyGenerator() {
       text={apology}
       buttonText="Generate Sorry"
       onGenerate={() => setApology(randomItem(apologies, apology))}
+      saveTool="apology"
+      onUseSaved={setApology}
     >
       <AiAssistPanel
         title="Custom apology"
@@ -827,6 +889,19 @@ function DateSpinner() {
   const [aiMood, setAiMood] = useState('Cozy')
   const [aiLoading, setAiLoading] = useState(false)
   const [aiError, setAiError] = useState('')
+  const [saveStatus, setSaveStatus] = useState('')
+  const { removeSavedResult, savedResults, saveResult } = useSavedResults('datePlan')
+
+  function saveCurrentPlan() {
+    saveResult({
+      title: plan.title,
+      preview: `${plan.title} - ${plan.vibe}`,
+      detail: `${plan.budget} budget`,
+      steps: plan.steps,
+    })
+    setSaveStatus('Saved')
+    window.setTimeout(() => setSaveStatus(''), 1200)
+  }
 
   async function generateAiDatePlan() {
     setAiLoading(true)
@@ -855,21 +930,40 @@ function DateSpinner() {
   return (
     <ToolPage>
       <section className="date-card">
-        <div className="date-topline">
+        <div className="date-topline result-reveal" key={`${plan.title}-${plan.vibe}`}>
           <span className="mini-label">Tonight's official plan</span>
           <strong>{plan.budget} budget</strong>
         </div>
-        <h2>{plan.title}</h2>
-        <p>{plan.vibe}</p>
-        <ol>
-          {plan.steps.map((step) => (
-            <li key={step}>{step}</li>
-          ))}
-        </ol>
-        <button type="button" onClick={() => setPlan(randomItem(datePlans, plan))}>
-          <Dice5 size={17} />
-          Spin plan
-        </button>
+        <div className="date-result result-reveal" key={`${plan.title}-${plan.steps.join('|')}`}>
+          <h2>{plan.title}</h2>
+          <p>{plan.vibe}</p>
+          <ol>
+            {plan.steps.map((step) => (
+              <li key={step}>{step}</li>
+            ))}
+          </ol>
+        </div>
+        <div className="button-row result-actions">
+          <button type="button" onClick={() => setPlan(randomItem(datePlans, plan))}>
+            <Dice5 size={17} />
+            Spin plan
+          </button>
+          <button className="secondary-button" type="button" onClick={saveCurrentPlan}>
+            <BookmarkCheck size={17} />
+            {saveStatus || 'Save Plan'}
+          </button>
+        </div>
+        <SavedResultsRail
+          emptyText="Saved date plans will appear here."
+          items={savedResults}
+          onRemove={removeSavedResult}
+          onUse={(item) => setPlan({
+            title: item.title,
+            budget: item.detail?.replace(' budget', '') || 'Medium',
+            vibe: item.preview.replace(`${item.title} - `, ''),
+            steps: item.steps || [],
+          })}
+        />
         <AiAssistPanel
           title="Custom date plan"
           buttonText="Plan with AI"
@@ -1135,7 +1229,7 @@ function GamePanel({ label, title, description, onPrimary, primaryText, extra })
 
 function AiAssistPanel({ buttonText, disabled = false, error, fields, loading, onGenerate, title }) {
   return (
-    <div className="ai-tool-panel">
+    <div className={`ai-tool-panel ${loading ? 'loading' : ''}`}>
       <div className="ai-tool-heading">
         <span className="mini-label">Groq AI</span>
         <strong>{title}</strong>
@@ -1166,6 +1260,13 @@ function AiAssistPanel({ buttonText, disabled = false, error, fields, loading, o
         <Sparkles size={17} />
         {loading ? 'Thinking...' : buttonText}
       </button>
+      {loading && (
+        <div className="ai-thinking" aria-live="polite">
+          <span />
+          <span />
+          <span />
+        </div>
+      )}
       {error && <p className="ai-tool-error">{error}</p>}
     </div>
   )
@@ -1231,6 +1332,8 @@ function ComplimentGenerator() {
         text={compliment}
         buttonText="Generate Compliment"
         onGenerate={generateCompliment}
+        saveTool="compliment"
+        onUseSaved={setCompliment}
         embedded
       >
         <AiAssistPanel
@@ -1263,8 +1366,47 @@ function ComplimentGenerator() {
   )
 }
 
-function GeneratorPage({ children, label, text, buttonText, onGenerate, embedded = false }) {
+function SavedResultsRail({ emptyText, items, onRemove, onUse }) {
+  return (
+    <div className="saved-results-rail">
+      <div className="saved-results-heading">
+        <span className="mini-label">Saved</span>
+        <strong>{items.length}/5</strong>
+      </div>
+      {items.length === 0 ? (
+        <p>{emptyText}</p>
+      ) : (
+        <div className="saved-results-list">
+          {items.map((item) => (
+            <article className="saved-result-item" key={item.id}>
+              <button type="button" onClick={() => onUse(item)}>
+                <Bookmark size={15} />
+                <span>{item.preview}</span>
+              </button>
+              <button type="button" aria-label="Remove saved result" onClick={() => onRemove(item.id)}>
+                <Trash2 size={14} />
+              </button>
+            </article>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function GeneratorPage({
+  children,
+  label,
+  text,
+  buttonText,
+  onGenerate,
+  onUseSaved,
+  saveTool = '',
+  embedded = false,
+}) {
   const [copied, setCopied] = useState(false)
+  const [saveStatus, setSaveStatus] = useState('')
+  const { removeSavedResult, savedResults, saveResult } = useSavedResults(saveTool || 'generated')
 
   function copyText() {
     navigator.clipboard.writeText(text)
@@ -1272,11 +1414,19 @@ function GeneratorPage({ children, label, text, buttonText, onGenerate, embedded
     window.setTimeout(() => setCopied(false), 1200)
   }
 
+  function saveText() {
+    saveResult({
+      preview: text,
+    })
+    setSaveStatus('Saved')
+    window.setTimeout(() => setSaveStatus(''), 1200)
+  }
+
   const content = (
     <section className="generator-box">
       <span className="mini-label">{label}</span>
-      <blockquote>{text}</blockquote>
-      <div className="button-row">
+      <blockquote className="result-reveal" key={text}>{text}</blockquote>
+      <div className="button-row result-actions">
         <button type="button" onClick={onGenerate}>
           <WandSparkles size={17} />
           {buttonText}
@@ -1285,7 +1435,21 @@ function GeneratorPage({ children, label, text, buttonText, onGenerate, embedded
           <Copy size={17} />
           {copied ? 'Copied' : 'Copy Text'}
         </button>
+        {saveTool && (
+          <button className="secondary-button" type="button" onClick={saveText}>
+            <BookmarkCheck size={17} />
+            {saveStatus || 'Save'}
+          </button>
+        )}
       </div>
+      {saveTool && (
+        <SavedResultsRail
+          emptyText="Saved lines will appear here."
+          items={savedResults}
+          onRemove={removeSavedResult}
+          onUse={(item) => onUseSaved?.(item.preview)}
+        />
+      )}
       {children}
     </section>
   )
