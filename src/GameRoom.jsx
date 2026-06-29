@@ -140,6 +140,19 @@ function formatSyncError(error) {
 function ToolPage({ children }) {
   return <div className="tool-page">{children}</div>
 }
+
+function RoomStartChecklist({ items }) {
+  return (
+    <div className="room-start-checklist" aria-label="Room start checklist">
+      {items.map((item) => (
+        <div className={item.done ? 'done' : ''} key={item.label}>
+          <span>{item.done ? 'Done' : item.step}</span>
+          <strong>{item.label}</strong>
+        </div>
+      ))}
+    </div>
+  )
+}
 function getInitialRoomCode() {
   const params = new URLSearchParams(window.location.search)
   return sanitizeRoomCode(params.get('room') || '') || createRoomCode()
@@ -1022,6 +1035,12 @@ function GameRoom() {
               ? 'This room is only running in this browser.'
               : 'Room changes are syncing.'
   const canRetrySync = isFirebaseConfigured && ['Offline', 'Reconnecting'].includes(syncStatus)
+  const roomGuideItems = [
+    { step: '1', label: 'Share invite', done: copied || qrOpen || shareStatus },
+    { step: '2', label: 'Friends join', done: activePlayerEntries.length > 1 },
+    { step: '3', label: 'Ready up', done: allReady && activePlayerEntries.length > 1 },
+    { step: '4', label: 'Start match', done: session.status !== 'lobby' },
+  ]
 
   useEffect(() => {
     if (!hasJoined) return undefined
@@ -2295,6 +2314,13 @@ function GameRoom() {
               <strong>No account needed</strong>
               <span>Your name is remembered only in this browser.</span>
             </div>
+            <RoomStartChecklist
+              items={[
+                { step: '1', label: 'Pick name', done: Boolean(joinName.trim()) },
+                { step: '2', label: 'Share code', done: joinCode.length >= 4 },
+                { step: '3', label: 'Invite friends', done: false },
+              ]}
+            />
             {syncError && <p className="sync-error">{syncError}</p>}
           </div>
           <form className="join-room-form" onSubmit={joinRoom}>
@@ -2454,6 +2480,8 @@ function GameRoom() {
             <strong>{modeLabel}</strong>
           </div>
         </div>
+
+        <RoomStartChecklist items={roomGuideItems} />
 
         <SessionControls
           allReady={allReady}

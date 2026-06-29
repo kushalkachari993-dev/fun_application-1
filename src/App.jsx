@@ -10,6 +10,7 @@ import {
 } from 'react-router-dom'
 import {
   Activity,
+  ArrowRight,
   BarChart3,
   Bookmark,
   BookmarkCheck,
@@ -266,6 +267,7 @@ const wouldYouRatherPrompts = [
 const aiToneOptions = ['Sweet', 'Funny', 'Sincere', 'Chaotic', 'Wholesome']
 const aiBudgetOptions = ['Low', 'Medium', 'High']
 const savedResultsStorageKey = 'just-for-fun-saved-results'
+const onboardingStorageKey = 'just-for-fun-onboarding-seen'
 
 const pages = [
   {
@@ -517,11 +519,27 @@ function Layout() {
   const isHome = location.pathname === '/'
   const [funMode, setFunMode] = useState(false)
   const [navOpen, setNavOpen] = useState(false)
+  const [showOnboarding, setShowOnboarding] = useState(() => {
+    try {
+      return window.localStorage.getItem(onboardingStorageKey) !== 'true'
+    } catch {
+      return true
+    }
+  })
   const [burst, setBurst] = useState(funBursts[0])
   const [alert, setAlert] = useState(chaosAlerts[0])
   const currentPage = pages.find((page) => page.path === location.pathname)
   const relationshipPages = pages.slice(0, 8)
   const playPages = pages.slice(8)
+
+  function dismissOnboarding() {
+    try {
+      window.localStorage.setItem(onboardingStorageKey, 'true')
+    } catch {
+      // The app can still be used if local storage is unavailable.
+    }
+    setShowOnboarding(false)
+  }
 
   function toggleFunMode() {
     setFunMode(!funMode)
@@ -644,8 +662,65 @@ function Layout() {
         {isHome && <ChaosConsole active={funMode} />}
 
         <Outlet />
+        {showOnboarding && <OnboardingSheet onDismiss={dismissOnboarding} />}
       </div>
     </main>
+  )
+}
+
+function OnboardingSheet({ onDismiss }) {
+  const routes = [
+    {
+      title: 'Relationship tools',
+      detail: 'Generate a line, save the good ones, copy when ready.',
+      path: '/compliment-generator',
+      icon: MessageCircleHeart,
+    },
+    {
+      title: 'Play with friends',
+      detail: 'Use quick prompts when everyone is on one screen.',
+      path: '/play-room',
+      icon: PartyPopper,
+    },
+    {
+      title: 'Create a room',
+      detail: 'Share a code, ready up, chat, score, and play live.',
+      path: '/game-room',
+      icon: Gamepad2,
+    },
+  ]
+
+  return (
+    <section className="onboarding-shell" aria-label="Start here">
+      <div className="onboarding-sheet">
+        <button className="icon-button onboarding-close" type="button" aria-label="Dismiss start guide" onClick={onDismiss}>
+          <X size={18} />
+        </button>
+        <div className="onboarding-copy">
+          <span className="mini-label">Start here</span>
+          <h2>Pick the kind of fun first.</h2>
+          <p>Choose a tool, start a small game, or open a multiplayer room.</p>
+        </div>
+        <div className="onboarding-actions">
+          {routes.map((route) => {
+            const Icon = route.icon
+            return (
+              <Link className="onboarding-action" key={route.path} to={route.path} onClick={onDismiss}>
+                <span><Icon size={18} /></span>
+                <div>
+                  <strong>{route.title}</strong>
+                  <small>{route.detail}</small>
+                </div>
+                <ArrowRight size={18} />
+              </Link>
+            )
+          })}
+        </div>
+        <button className="secondary-button onboarding-skip" type="button" onClick={onDismiss}>
+          Continue exploring
+        </button>
+      </div>
+    </section>
   )
 }
 
@@ -1234,6 +1309,7 @@ function AiAssistPanel({ buttonText, disabled = false, error, fields, loading, o
         <span className="mini-label">Groq AI</span>
         <strong>{title}</strong>
       </div>
+      <p className="ai-tool-hint">One specific detail makes the result feel less copied.</p>
       <div className="ai-tool-fields">
         {fields.map((field) => (
           <label key={field.id}>

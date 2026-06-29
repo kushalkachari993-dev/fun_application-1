@@ -171,6 +171,117 @@
   border-top: 1px solid var(--line);
 }
 
+.onboarding-shell {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: end center;
+  padding: 22px;
+  background: rgba(22, 34, 42, 0.32);
+  backdrop-filter: blur(10px);
+}
+
+.onboarding-sheet {
+  position: relative;
+  display: grid;
+  width: min(880px, 100%);
+  gap: 18px;
+  padding: 22px;
+  border: 1px solid #d9e4e7;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: 0 24px 70px rgba(22, 34, 42, 0.2);
+  animation: resultReveal 260ms ease both;
+}
+
+.onboarding-close {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  display: inline-grid;
+}
+
+.onboarding-copy {
+  max-width: 560px;
+  padding-right: 44px;
+}
+
+.onboarding-copy h2 {
+  margin: 8px 0;
+  color: var(--ink);
+  font-size: clamp(32px, 5vw, 54px);
+  line-height: 0.98;
+}
+
+.onboarding-copy p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 16px;
+  font-weight: 750;
+}
+
+.onboarding-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.onboarding-action {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 13px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--ink);
+  background: #f8fbfb;
+  text-decoration: none;
+}
+
+.onboarding-action:hover,
+.onboarding-action:focus-visible {
+  border-color: #b9d9d2;
+  background: #edf7f4;
+}
+
+.onboarding-action > span {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  border-radius: 8px;
+  color: #176b62;
+  background: #e0f0ed;
+}
+
+.onboarding-action div {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.onboarding-action strong {
+  overflow: hidden;
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.onboarding-action small {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 750;
+  line-height: 1.35;
+}
+
+.onboarding-skip {
+  justify-self: start;
+  margin-top: 0;
+}
+
 .sidebar-status {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
@@ -866,6 +977,13 @@ button:active {
   font-size: 14px;
 }
 
+.ai-tool-hint {
+  margin: -4px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 750;
+}
+
 .ai-tool-fields {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1145,6 +1263,57 @@ button:active {
 
 .room-lobby {
   min-height: 500px;
+}
+
+.room-start-checklist {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.lobby-copy .room-start-checklist {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.room-start-checklist div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.room-start-checklist span {
+  width: max-content;
+  max-width: 100%;
+  padding: 3px 7px;
+  border-radius: 999px;
+  color: #6b747b;
+  background: #edf1f3;
+  font-size: 10px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.room-start-checklist strong {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.room-start-checklist div.done {
+  border-color: #bdddd6;
+  background: #f0faf7;
+}
+
+.room-start-checklist div.done span {
+  color: #176b62;
+  background: #d9eee9;
 }
 
 .join-room-form {
@@ -2256,6 +2425,18 @@ button:active {
 }
 
 @media (max-width: 1120px) {
+  .onboarding-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .room-start-checklist {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .lobby-copy .room-start-checklist {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
   .page-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -2421,6 +2602,42 @@ button:active {
 }
 
 @media (max-width: 640px) {
+  .onboarding-shell {
+    align-items: end;
+    padding: 10px;
+  }
+
+  .onboarding-sheet {
+    max-height: calc(100svh - 20px);
+    overflow-y: auto;
+    padding: 18px;
+  }
+
+  .onboarding-copy {
+    padding-right: 36px;
+  }
+
+  .onboarding-copy h2 {
+    font-size: 34px;
+  }
+
+  .onboarding-action {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .onboarding-action > svg {
+    display: none;
+  }
+
+  .onboarding-skip {
+    width: 100%;
+  }
+
+  .room-start-checklist,
+  .lobby-copy .room-start-checklist {
+    grid-template-columns: 1fr;
+  }
+
   .hero {
     padding: 30px 18px 18px;
   }
