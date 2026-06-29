@@ -39,6 +39,7 @@ import './App.css'
 import './polish.css'
 
 const GameRoom = lazy(() => import('./GameRoom'))
+const AdminFeedback = lazy(() => import('./AdminFeedback'))
 
 const girlfriendStatuses = [
   {
@@ -506,6 +507,7 @@ function App() {
         <Route path="mission-wheel" element={<MissionWheel />} />
         <Route path="play-room" element={<PlayRoom />} />
         <Route path="game-room" element={<LazyRoute><GameRoom /></LazyRoute>} />
+        <Route path="admin-feedback" element={<LazyRoute><AdminFeedback /></LazyRoute>} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>
@@ -1695,10 +1697,12 @@ function ToolPage({ children }) {
 }
 
 function currentPageTitle(pathname) {
+  if (pathname === '/admin-feedback') return 'Feedback Dashboard'
   return pages.find((page) => page.path === pathname)?.title ?? 'Just For Fun HQ'
 }
 
 function currentPageDescription(pathname) {
+  if (pathname === '/admin-feedback') return 'Review recent feedback and product signals.'
   return pages.find((page) => page.path === pathname)?.description ?? ''
 }
 

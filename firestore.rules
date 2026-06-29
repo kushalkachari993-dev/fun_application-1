@@ -37,6 +37,16 @@ service cloud.firestore {
       ];
     }
 
+    function adminPath(uid) {
+      return /databases/$(database)/documents/admins/$(uid);
+    }
+
+    function isAdmin() {
+      return signedIn()
+        && exists(adminPath(request.auth.uid))
+        && get(adminPath(request.auth.uid)).data.enabled == true;
+    }
+
     function roomPath(roomId) {
       return /databases/$(database)/documents/rooms/$(roomId);
     }
@@ -135,7 +145,8 @@ service cloud.firestore {
           'roomExit',
         ];
 
-      allow read, update, delete: if false;
+      allow read: if isAdmin();
+      allow update, delete: if false;
     }
 
     match /analyticsEvents/{eventId} {
@@ -156,7 +167,13 @@ service cloud.firestore {
           'qr_opened',
         ];
 
-      allow read, update, delete: if false;
+      allow read: if isAdmin();
+      allow update, delete: if false;
+    }
+
+    match /admins/{adminId} {
+      allow read: if signedIn() && adminId == request.auth.uid;
+      allow create, update, delete: if false;
     }
 
     function ownerPlayerKeys() {
