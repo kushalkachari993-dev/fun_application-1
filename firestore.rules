@@ -6,6 +6,37 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    function feedbackKeys() {
+      return [
+        'type',
+        'message',
+        'page',
+        'roomCode',
+        'source',
+        'rating',
+        'value',
+        'uid',
+        'createdAt',
+        'appVersion',
+        'userAgent',
+      ];
+    }
+
+    function analyticsEventKeys() {
+      return [
+        'event',
+        'page',
+        'roomCode',
+        'source',
+        'rating',
+        'value',
+        'uid',
+        'createdAt',
+        'appVersion',
+        'userAgent',
+      ];
+    }
+
     function roomPath(roomId) {
       return /databases/$(database)/documents/rooms/$(roomId);
     }
@@ -89,6 +120,43 @@ service cloud.firestore {
         'lastActiveAt',
         'updatedAt',
       ];
+    }
+
+    match /feedback/{feedbackId} {
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly(feedbackKeys())
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.type in [
+          'bug',
+          'idea',
+          'confusing',
+          'love',
+          'aiHelpful',
+          'roomExit',
+        ];
+
+      allow read, update, delete: if false;
+    }
+
+    match /analyticsEvents/{eventId} {
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly(analyticsEventKeys())
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.event in [
+          'ai_generated',
+          'ai_failed',
+          'ai_feedback',
+          'feedback_submitted',
+          'room_created',
+          'room_joined',
+          'room_exit_reason',
+          'join_blocked',
+          'invite_copied',
+          'invite_shared',
+          'qr_opened',
+        ];
+
+      allow read, update, delete: if false;
     }
 
     function ownerPlayerKeys() {

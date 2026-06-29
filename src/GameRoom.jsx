@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Chess } from 'chess.js'
 import QRCode from 'qrcode'
 import {
@@ -21,6 +21,7 @@ import {
 import {
   ArrowRight,
   Copy,
+  DoorOpen,
   Gamepad2,
   Laugh,
   LockKeyhole,
@@ -36,6 +37,7 @@ import {
 } from 'lucide-react'
 import { avatarPresets } from './avatars'
 import { ChessGame, LudoGame } from './BoardGames'
+import { logAnalyticsEvent, submitFeedback } from './feedback'
 import { auth, db, isFirebaseConfigured } from './firebase'
 import {
   AvatarPicker,
@@ -104,6 +106,13 @@ const roomSchemaVersion = 2
 const gameStateDocId = 'current'
 const gameStateKeys = ['game', 'prompt', 'round', 'reactions', 'session', 'chess', 'ludo']
 const roomMetadataKeys = ['roomCode', 'hostId', 'expiresAt', 'resetAt', 'kickedPlayers', 'locked']
+const roomExitReasons = [
+  ['done_playing', 'Done playing'],
+  ['left_alone', 'No one joined'],
+  ['confusing_room', 'Room felt confusing'],
+  ['connection_issue', 'Connection issue'],
+  ['other', 'Other'],
+]
 
 function randomItem(items, current) {
   if (items.length === 1) return items[0]
@@ -153,6 +162,66 @@ function RoomStartChecklist({ items }) {
     </div>
   )
 }
+
+function RoomExitSheet({
+  exitMessage,
+  exitReason,
+  exitStatus,
+  exitSubmitting,
+  onClose,
+  onMessageChange,
+  onReasonChange,
+  onSkip,
+  onSubmit,
+}) {
+  return (
+    <section className="feedback-shell" aria-label="Room exit feedback">
+      <form className="feedback-sheet room-exit-sheet" onSubmit={onSubmit}>
+        <button className="icon-button feedback-close" type="button" aria-label="Close exit feedback" onClick={onClose}>
+          <DoorOpen size={18} />
+        </button>
+        <div className="feedback-copy">
+          <span className="mini-label">Leaving room</span>
+          <h2>What made you leave?</h2>
+          <p>This helps spot room setup, invite, and connection problems.</p>
+        </div>
+        <div className="feedback-type-grid room-exit-reasons" aria-label="Exit reason">
+          {roomExitReasons.map(([value, label]) => (
+            <button
+              className={exitReason === value ? 'active' : ''}
+              type="button"
+              key={value}
+              onClick={() => onReasonChange(value)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <label className="feedback-message">
+          Extra detail
+          <textarea
+            rows="3"
+            maxLength="800"
+            value={exitMessage}
+            onChange={(event) => onMessageChange(event.target.value)}
+            placeholder="Optional: what should feel easier?"
+          />
+        </label>
+        <div className="feedback-actions">
+          <button type="submit" disabled={exitSubmitting}>
+            <ArrowRight size={17} />
+            {exitSubmitting ? 'Saving...' : 'Leave & Send'}
+          </button>
+          <button className="secondary-button" type="button" onClick={onSkip}>
+            Leave Without Sending
+          </button>
+        </div>
+        {exitStatus && <p className="feedback-status">{exitStatus}</p>}
+      </form>
+    </section>
+  )
+}
+
 function getInitialRoomCode() {
   const params = new URLSearchParams(window.location.search)
   return sanitizeRoomCode(params.get('room') || '') || createRoomCode()
@@ -946,6 +1015,12 @@ function GameRoom() {
   const [qrOpen, setQrOpen] = useState(false)
   const [qrDataUrl, setQrDataUrl] = useState('')
   const [shareStatus, setShareStatus] = useState('')
+  const [exitPromptOpen, setExitPromptOpen] = useState(false)
+  const [exitReason, setExitReason] = useState('done_playing')
+  const [exitMessage, setExitMessage] = useState('')
+  const [exitStatus, setExitStatus] = useState('')
+  const [exitSubmitting, setExitSubmitting] = useState(false)
+  const blockedEventMarkerRef = useRef('')
   const authUid = authUser?.uid || ''
   const { game, history, messages, players, prompt, reactions, roomCode, round, session } = room
   const currentKickRecord = room.kickedPlayers?.[currentPlayer.id]
@@ -1041,6 +1116,28 @@ function GameRoom() {
     { step: '3', label: 'Ready up', done: allReady && activePlayerEntries.length > 1 },
     { step: '4', label: 'Start match', done: session.status !== 'lobby' },
   ]
+
+  function logRoomEvent(event, context = {}) {
+    logAnalyticsEvent(event, {
+      page: '/game-room',
+      roomCode,
+      ...context,
+    })
+  }
+
+  useEffect(() => {
+    if (!currentPlayerLockedOut) return
+    const value = currentPlayerBlocked ? 'permanent' : 'removed'
+    const marker = `${roomCode}:${value}`
+    if (blockedEventMarkerRef.current === marker) return
+
+    logAnalyticsEvent('join_blocked', {
+      page: '/game-room',
+      roomCode,
+      value,
+    })
+    blockedEventMarkerRef.current = marker
+  }, [currentPlayerBlocked, currentPlayerLockedOut, roomCode])
 
   useEffect(() => {
     if (!hasJoined) return undefined
@@ -1651,6 +1748,11 @@ function GameRoom() {
     setSyncStatus(isFirebaseConfigured ? 'Connecting' : 'Local demo')
     setSyncError('')
     window.history.replaceState(null, '', `/game-room?room=${code}`)
+    logAnalyticsEvent('room_joined', {
+      page: '/game-room',
+      roomCode: code,
+      value: isFirebaseConfigured ? 'live' : 'local',
+    })
   }
 
   function startNewRoom() {
@@ -1662,6 +1764,11 @@ function GameRoom() {
     setSyncStatus(isFirebaseConfigured ? 'Connecting' : 'Local demo')
     setSyncError('')
     window.history.replaceState(null, '', `/game-room?room=${nextCode}`)
+    logAnalyticsEvent('room_created', {
+      page: '/game-room',
+      roomCode: nextCode,
+      value: isFirebaseConfigured ? 'live' : 'local',
+    })
   }
 
   function rejoinCurrentRoom() {
@@ -1794,6 +1901,7 @@ function GameRoom() {
       setShareStatus('Link copied')
       window.setTimeout(() => setCopied(false), 1400)
       window.setTimeout(() => setShareStatus(''), 1600)
+      logRoomEvent('invite_copied')
     } catch {
       setShareStatus('Copy failed')
       window.setTimeout(() => setShareStatus(''), 1800)
@@ -1810,6 +1918,7 @@ function GameRoom() {
         })
         setShareStatus('Shared')
         window.setTimeout(() => setShareStatus(''), 1600)
+        logRoomEvent('invite_shared')
         return
       } catch (error) {
         if (error?.name === 'AbortError') return
@@ -1836,6 +1945,7 @@ function GameRoom() {
       })
       setQrDataUrl(dataUrl)
       setQrOpen(true)
+      logRoomEvent('qr_opened')
     } catch {
       setShareStatus('QR failed')
       window.setTimeout(() => setShareStatus(''), 1800)
@@ -2208,6 +2318,39 @@ function GameRoom() {
     setHasJoined(false)
   }
 
+  async function submitExitReason(event) {
+    event.preventDefault()
+    setExitSubmitting(true)
+    setExitStatus('')
+    try {
+      await submitFeedback({
+        type: 'roomExit',
+        message: exitMessage,
+        page: '/game-room',
+        roomCode,
+        source: 'room-exit',
+        rating: exitReason,
+      })
+      logRoomEvent('room_exit_reason', { rating: exitReason })
+      setExitPromptOpen(false)
+      setHasJoined(false)
+      setExitMessage('')
+      setExitStatus('')
+      window.history.replaceState(null, '', `/game-room?room=${roomCode}`)
+    } catch (error) {
+      setExitStatus(formatSyncError(error))
+    } finally {
+      setExitSubmitting(false)
+    }
+  }
+
+  function skipExitReason() {
+    logRoomEvent('room_exit_reason', { rating: 'skipped' })
+    setExitPromptOpen(false)
+    setHasJoined(false)
+    window.history.replaceState(null, '', `/game-room?room=${roomCode}`)
+  }
+
   if (currentPlayerLockedOut) {
     const isPermanent = currentPlayerBlocked
     const strikeLabel = `Strike ${Math.min(currentKickCount, kickLimit)} of ${kickLimit}`
@@ -2431,6 +2574,10 @@ function GameRoom() {
                 <Plus size={17} />
                 New Room
               </button>
+              <button className="secondary-button" type="button" onClick={() => setExitPromptOpen(true)}>
+                <DoorOpen size={17} />
+                Leave
+              </button>
             </div>
             {(shareStatus || qrOpen) && (
               <div className="invite-share-panel">
@@ -2442,6 +2589,19 @@ function GameRoom() {
             )}
           </div>
         </div>
+        {exitPromptOpen && (
+          <RoomExitSheet
+            exitMessage={exitMessage}
+            exitReason={exitReason}
+            exitStatus={exitStatus}
+            exitSubmitting={exitSubmitting}
+            onClose={() => setExitPromptOpen(false)}
+            onMessageChange={setExitMessage}
+            onReasonChange={setExitReason}
+            onSkip={skipExitReason}
+            onSubmit={submitExitReason}
+          />
+        )}
 
         <nav className="mobile-room-nav" aria-label="Room sections">
           <a href="#room-game">

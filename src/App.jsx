@@ -268,6 +268,7 @@ const aiToneOptions = ['Sweet', 'Funny', 'Sincere', 'Chaotic', 'Wholesome']
 const aiBudgetOptions = ['Low', 'Medium', 'High']
 const savedResultsStorageKey = 'just-for-fun-saved-results'
 const onboardingStorageKey = 'just-for-fun-onboarding-seen'
+const feedbackTypes = ['bug', 'idea', 'confusing', 'love']
 
 const pages = [
   {
@@ -372,6 +373,17 @@ function writeSavedResults(tool, results) {
   }
 }
 
+function trackEvent(event, context = {}) {
+  import('./feedback')
+    .then(({ logAnalyticsEvent }) => logAnalyticsEvent(event, context))
+    .catch(() => {})
+}
+
+async function sendFeedback(payload) {
+  const { submitFeedback } = await import('./feedback')
+  await submitFeedback(payload)
+}
+
 function createSavedResult(tool, result) {
   return {
     id: window.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`,
@@ -460,9 +472,11 @@ async function generateAiRelationshipContent(tool, answers) {
   if (!response.ok) {
     const error = new Error(payload.error || 'AI generation failed. Try again in a moment.')
     error.code = payload.code || `http/${response.status}`
+    trackEvent('ai_failed', { source: tool, value: error.code })
     throw error
   }
 
+  trackEvent('ai_generated', { source: tool })
   return payload || {}
 }
 
@@ -519,6 +533,7 @@ function Layout() {
   const isHome = location.pathname === '/'
   const [funMode, setFunMode] = useState(false)
   const [navOpen, setNavOpen] = useState(false)
+  const [feedbackOpen, setFeedbackOpen] = useState(false)
   const [showOnboarding, setShowOnboarding] = useState(() => {
     try {
       return window.localStorage.getItem(onboardingStorageKey) !== 'true'
@@ -609,6 +624,10 @@ function Layout() {
             <Zap size={17} />
             <span>{funMode ? 'Chaos enabled' : 'Enable chaos'}</span>
           </button>
+          <button className="feedback-trigger" type="button" onClick={() => setFeedbackOpen(true)}>
+            <MessageCircleHeart size={17} />
+            <span>Feedback</span>
+          </button>
         </div>
       </aside>
 
@@ -623,10 +642,16 @@ function Layout() {
               <strong>{isHome ? 'Overview' : currentPageTitle(location.pathname)}</strong>
             </div>
           </div>
-          <button className={`header-chaos ${funMode ? 'active' : ''}`} type="button" onClick={toggleFunMode}>
-            <Zap size={16} />
-            <span>{funMode ? 'Chaos on' : 'Chaos mode'}</span>
-          </button>
+          <div className="header-actions">
+            <button className="header-feedback" type="button" onClick={() => setFeedbackOpen(true)}>
+              <MessageCircleHeart size={16} />
+              <span>Feedback</span>
+            </button>
+            <button className={`header-chaos ${funMode ? 'active' : ''}`} type="button" onClick={toggleFunMode}>
+              <Zap size={16} />
+              <span>{funMode ? 'Chaos on' : 'Chaos mode'}</span>
+            </button>
+          </div>
         </header>
 
         {funMode && (
@@ -663,8 +688,85 @@ function Layout() {
 
         <Outlet />
         {showOnboarding && <OnboardingSheet onDismiss={dismissOnboarding} />}
+        {feedbackOpen && <FeedbackSheet onClose={() => setFeedbackOpen(false)} />}
       </div>
     </main>
+  )
+}
+
+function FeedbackSheet({ onClose }) {
+  const location = useLocation()
+  const [type, setType] = useState('idea')
+  const [message, setMessage] = useState('')
+  const [status, setStatus] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+
+  async function submit(event) {
+    event.preventDefault()
+    setSubmitting(true)
+    setStatus('')
+    try {
+      await sendFeedback({
+        type,
+        message,
+        page: location.pathname,
+        source: 'general',
+      })
+      setStatus('Sent. Thank you.')
+      setMessage('')
+      window.setTimeout(onClose, 900)
+    } catch (error) {
+      setStatus(formatSyncError(error))
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <section className="feedback-shell" aria-label="Feedback">
+      <form className="feedback-sheet" onSubmit={submit}>
+        <button className="icon-button feedback-close" type="button" aria-label="Close feedback" onClick={onClose}>
+          <X size={18} />
+        </button>
+        <div className="feedback-copy">
+          <span className="mini-label">Feedback</span>
+          <h2>Tell me what to improve.</h2>
+          <p>Bug, idea, confusing moment, or something you liked.</p>
+        </div>
+        <div className="feedback-type-grid" aria-label="Feedback type">
+          {feedbackTypes.map((option) => (
+            <button
+              className={type === option ? 'active' : ''}
+              type="button"
+              key={option}
+              onClick={() => setType(option)}
+            >
+              {option === 'bug' ? 'Bug' : option === 'love' ? 'Love this' : option[0].toUpperCase() + option.slice(1)}
+            </button>
+          ))}
+        </div>
+        <label className="feedback-message">
+          Message
+          <textarea
+            rows="4"
+            maxLength="800"
+            value={message}
+            onChange={(event) => setMessage(event.target.value)}
+            placeholder="What happened, what felt unclear, or what should exist next?"
+          />
+        </label>
+        <div className="feedback-actions">
+          <button type="submit" disabled={submitting || !message.trim()}>
+            <ArrowRight size={17} />
+            {submitting ? 'Sending...' : 'Send Feedback'}
+          </button>
+          <button className="secondary-button" type="button" onClick={onClose}>
+            Cancel
+          </button>
+        </div>
+        {status && <p className="feedback-status">{status}</p>}
+      </form>
+    </section>
   )
 }
 
@@ -1038,6 +1140,10 @@ function DateSpinner() {
             vibe: item.preview.replace(`${item.title} - `, ''),
             steps: item.steps || [],
           })}
+        />
+        <HelpfulFeedback
+          source="datePlan"
+          value={plan.title}
         />
         <AiAssistPanel
           title="Custom date plan"
@@ -1470,6 +1576,45 @@ function SavedResultsRail({ emptyText, items, onRemove, onUse }) {
   )
 }
 
+function HelpfulFeedback({ source, value }) {
+  const [status, setStatus] = useState('')
+  const [submitting, setSubmitting] = useState('')
+
+  async function sendHelpfulFeedback(rating) {
+    setSubmitting(rating)
+    setStatus('')
+    try {
+      await sendFeedback({
+        type: 'aiHelpful',
+        message: value,
+        source,
+        rating,
+      })
+      trackEvent('ai_feedback', { source, rating, value })
+      setStatus(rating === 'up' ? 'Marked helpful' : 'Marked not helpful')
+    } catch (error) {
+      setStatus(formatSyncError(error))
+    } finally {
+      setSubmitting('')
+    }
+  }
+
+  return (
+    <div className="helpful-feedback" aria-label="AI result feedback">
+      <span>Was this useful?</span>
+      <div>
+        <button type="button" disabled={Boolean(submitting)} onClick={() => sendHelpfulFeedback('up')}>
+          {submitting === 'up' ? 'Sending...' : 'Yes'}
+        </button>
+        <button type="button" disabled={Boolean(submitting)} onClick={() => sendHelpfulFeedback('down')}>
+          {submitting === 'down' ? 'Sending...' : 'No'}
+        </button>
+      </div>
+      {status && <small>{status}</small>}
+    </div>
+  )
+}
+
 function GeneratorPage({
   children,
   label,
@@ -1524,6 +1669,12 @@ function GeneratorPage({
           items={savedResults}
           onRemove={removeSavedResult}
           onUse={(item) => onUseSaved?.(item.preview)}
+        />
+      )}
+      {saveTool && (
+        <HelpfulFeedback
+          source={saveTool}
+          value={text}
         />
       )}
       {children}
