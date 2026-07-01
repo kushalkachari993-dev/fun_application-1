@@ -1,4 +1,4 @@
-import { Suspense, lazy, useState } from 'react'
+import { Suspense, lazy, useEffect, useState } from 'react'
 import {
   Link,
   NavLink,
@@ -344,6 +344,37 @@ const pages = [
   },
 ]
 
+const homeFocusActions = [
+  {
+    title: 'Make something personal',
+    detail: 'Use the AI-assisted generators when the default line feels too generic.',
+    path: '/compliment-generator',
+    icon: WandSparkles,
+    tone: 'teal',
+  },
+  {
+    title: 'Start a live room',
+    detail: 'Share one code, keep chat and score in the same place, then hand off host when needed.',
+    path: '/game-room',
+    icon: Gamepad2,
+    tone: 'blue',
+  },
+  {
+    title: 'Leave a signal',
+    detail: 'Send quick feedback after a confusing moment so the next polish pass has real clues.',
+    path: null,
+    icon: MessageCircleHeart,
+    tone: 'rose',
+  },
+]
+
+const onboardingSteps = [
+  ['Pick', 'Choose one quick tool or a live room.'],
+  ['Personalize', 'Add one detail before using AI.'],
+  ['Save', 'Keep the best result on this device.'],
+  ['Share', 'Copy a line or invite friends by room code.'],
+]
+
 function randomItem(items, current) {
   if (items.length === 1) return items[0]
   let next = current
@@ -518,10 +549,13 @@ function LazyRoute({ children }) {
   return (
     <Suspense fallback={(
       <ToolPage>
-        <section className="generator-box">
-          <span className="mini-label">Loading</span>
-          <blockquote>Opening game room...</blockquote>
-        </section>
+        <StateCallout
+          icon={RefreshCw}
+          label="Loading"
+          title="Opening this space..."
+          detail="Getting the latest room and game code ready."
+          tone="loading"
+        />
       </ToolPage>
     )}
     >
@@ -549,6 +583,12 @@ function Layout() {
   const relationshipPages = pages.slice(0, 8)
   const playPages = pages.slice(8)
 
+  useEffect(() => {
+    const openFeedback = () => setFeedbackOpen(true)
+    window.addEventListener('open-feedback', openFeedback)
+    return () => window.removeEventListener('open-feedback', openFeedback)
+  }, [])
+
   function dismissOnboarding() {
     try {
       window.localStorage.setItem(onboardingStorageKey, 'true')
@@ -562,6 +602,11 @@ function Layout() {
     setFunMode(!funMode)
     setBurst(randomItem(funBursts, burst))
     setAlert(randomItem(chaosAlerts, alert))
+  }
+
+  function openOnboarding() {
+    setShowOnboarding(true)
+    setNavOpen(false)
   }
 
   return (
@@ -625,6 +670,10 @@ function Layout() {
           <button className={`chaos-control ${funMode ? 'active' : ''}`} type="button" onClick={toggleFunMode}>
             <Zap size={17} />
             <span>{funMode ? 'Chaos enabled' : 'Enable chaos'}</span>
+          </button>
+          <button className="guide-trigger" type="button" onClick={openOnboarding}>
+            <Target size={17} />
+            <span>Start guide</span>
           </button>
           <button className="feedback-trigger" type="button" onClick={() => setFeedbackOpen(true)}>
             <MessageCircleHeart size={17} />
@@ -700,13 +749,13 @@ function FeedbackSheet({ onClose }) {
   const location = useLocation()
   const [type, setType] = useState('idea')
   const [message, setMessage] = useState('')
-  const [status, setStatus] = useState('')
+  const [status, setStatus] = useState({ message: '', tone: '' })
   const [submitting, setSubmitting] = useState(false)
 
   async function submit(event) {
     event.preventDefault()
     setSubmitting(true)
-    setStatus('')
+    setStatus({ message: '', tone: '' })
     try {
       await sendFeedback({
         type,
@@ -714,11 +763,11 @@ function FeedbackSheet({ onClose }) {
         page: location.pathname,
         source: 'general',
       })
-      setStatus('Sent. Thank you.')
+      setStatus({ message: 'Sent. Thank you.', tone: 'success' })
       setMessage('')
       window.setTimeout(onClose, 900)
     } catch (error) {
-      setStatus(formatSyncError(error))
+      setStatus({ message: formatSyncError(error), tone: 'error' })
     } finally {
       setSubmitting(false)
     }
@@ -766,9 +815,33 @@ function FeedbackSheet({ onClose }) {
             Cancel
           </button>
         </div>
-        {status && <p className="feedback-status">{status}</p>}
+        {status.message && <p className={`feedback-status ${status.tone}`} aria-live="polite">{status.message}</p>}
       </form>
     </section>
+  )
+}
+
+function StateCallout({
+  action,
+  compact = false,
+  detail,
+  icon: Icon = Sparkles,
+  label,
+  title,
+  tone = 'neutral',
+}) {
+  return (
+    <div className={`state-callout ${tone} ${compact ? 'compact' : ''}`} role={tone === 'error' ? 'alert' : 'status'}>
+      <span className="state-callout-icon">
+        <Icon size={compact ? 17 : 21} />
+      </span>
+      <div>
+        {label && <span className="mini-label">{label}</span>}
+        <strong>{title}</strong>
+        {detail && <p>{detail}</p>}
+      </div>
+      {action}
+    </div>
   )
 }
 
@@ -803,7 +876,16 @@ function OnboardingSheet({ onDismiss }) {
         <div className="onboarding-copy">
           <span className="mini-label">Start here</span>
           <h2>Pick the kind of fun first.</h2>
-          <p>Choose a tool, start a small game, or open a multiplayer room.</p>
+          <p>Fast solo tools, group prompts, and live rooms are all one click away.</p>
+        </div>
+        <div className="onboarding-steps" aria-label="Quick start flow">
+          {onboardingSteps.map(([label, detail], index) => (
+            <div key={label}>
+              <span>{index + 1}</span>
+              <strong>{label}</strong>
+              <small>{detail}</small>
+            </div>
+          ))}
         </div>
         <div className="onboarding-actions">
           {routes.map((route) => {
@@ -840,6 +922,9 @@ function FloatingStickers() {
 }
 
 function Home() {
+  const relationshipTools = pages.slice(0, 8)
+  const playTools = pages.slice(8)
+
   return (
     <>
       <section className="quick-stats" aria-label="Fake dashboard stats">
@@ -860,22 +945,92 @@ function Home() {
         </div>
       </section>
 
-      <div className="page-grid">
-        {pages.map((page) => {
-          const Icon = page.icon
-          return (
-          <Link className={`feature-card ${page.accent}`} key={page.path} to={page.path}>
-            <div className="feature-topline">
-              <span className="feature-number"><Icon size={20} /></span>
-              <ChevronRight size={19} />
-            </div>
-            <span>{page.title}</span>
-            <p>{page.description}</p>
-          </Link>
-          )
-        })}
-      </div>
+      <HomeFocusStrip />
+
+      <HomeSection
+        label="Relationship tools"
+        title="Tiny helpers for texts, plans, and emotional weather"
+        description="Quick generators first, AI personalization when the moment needs a sharper line."
+      >
+        {relationshipTools.map((page) => (
+          <FeatureCard page={page} key={page.path} />
+        ))}
+      </HomeSection>
+
+      <HomeSection
+        label="Play together"
+        title="Rooms and party prompts for more than one person"
+        description="Use one-screen prompts for nearby friends or a live room when people are remote."
+      >
+        {playTools.map((page) => (
+          <FeatureCard page={page} key={page.path} />
+        ))}
+      </HomeSection>
     </>
+  )
+}
+
+function HomeFocusStrip() {
+  return (
+    <section className="home-focus-strip" aria-label="Recommended next actions">
+      {homeFocusActions.map((action) => {
+        const Icon = action.icon
+        const content = (
+          <>
+            <span className={`focus-icon ${action.tone}`}><Icon size={18} /></span>
+            <div>
+              <strong>{action.title}</strong>
+              <small>{action.detail}</small>
+            </div>
+            {action.path && <ChevronRight size={18} />}
+          </>
+        )
+
+        if (!action.path) {
+          return (
+            <button className="home-focus-card" type="button" key={action.title} onClick={() => window.dispatchEvent(new CustomEvent('open-feedback'))}>
+              {content}
+            </button>
+          )
+        }
+
+        return (
+          <Link className="home-focus-card" key={action.title} to={action.path}>
+            {content}
+          </Link>
+        )
+      })}
+    </section>
+  )
+}
+
+function HomeSection({ children, description, label, title }) {
+  return (
+    <section className="home-section">
+      <div className="home-section-heading">
+        <span className="mini-label">{label}</span>
+        <h2>{title}</h2>
+        <p>{description}</p>
+      </div>
+      <div className="page-grid">
+        {children}
+      </div>
+    </section>
+  )
+}
+
+function FeatureCard({ page }) {
+  const Icon = page.icon
+
+  return (
+    <Link className={`feature-card ${page.accent}`} to={page.path}>
+      <div className="feature-topline">
+        <span className="feature-number"><Icon size={20} /></span>
+        <ChevronRight size={19} />
+      </div>
+      <span>{page.title}</span>
+      <p>{page.description}</p>
+    </Link>
   )
 }
 
@@ -1132,6 +1287,7 @@ function DateSpinner() {
             {saveStatus || 'Save Plan'}
           </button>
         </div>
+        {saveStatus && <p className="result-status success" aria-live="polite">Plan saved on this device.</p>}
         <SavedResultsRail
           emptyText="Saved date plans will appear here."
           items={savedResults}
@@ -1445,13 +1601,25 @@ function AiAssistPanel({ buttonText, disabled = false, error, fields, loading, o
         {loading ? 'Thinking...' : buttonText}
       </button>
       {loading && (
-        <div className="ai-thinking" aria-live="polite">
-          <span />
-          <span />
-          <span />
-        </div>
+        <StateCallout
+          compact
+          icon={Sparkles}
+          label="AI working"
+          title="Making this feel personal..."
+          detail="The result will replace the current line when it is ready."
+          tone="loading"
+        />
       )}
-      {error && <p className="ai-tool-error">{error}</p>}
+      {error && (
+        <StateCallout
+          compact
+          icon={ShieldAlert}
+          label="Needs attention"
+          title="AI could not respond"
+          detail={error}
+          tone="error"
+        />
+      )}
     </div>
   )
 }
@@ -1558,7 +1726,14 @@ function SavedResultsRail({ emptyText, items, onRemove, onUse }) {
         <strong>{items.length}/5</strong>
       </div>
       {items.length === 0 ? (
-        <p>{emptyText}</p>
+        <StateCallout
+          compact
+          icon={Bookmark}
+          label="Nothing saved yet"
+          title={emptyText}
+          detail="Saved results stay on this device for quick reuse."
+          tone="empty"
+        />
       ) : (
         <div className="saved-results-list">
           {items.map((item) => (
@@ -1629,12 +1804,23 @@ function GeneratorPage({
 }) {
   const [copied, setCopied] = useState(false)
   const [saveStatus, setSaveStatus] = useState('')
+  const [actionStatus, setActionStatus] = useState({ message: '', tone: '' })
   const { removeSavedResult, savedResults, saveResult } = useSavedResults(saveTool || 'generated')
 
-  function copyText() {
-    navigator.clipboard.writeText(text)
-    setCopied(true)
-    window.setTimeout(() => setCopied(false), 1200)
+  function flashActionStatus(message, tone = 'success') {
+    setActionStatus({ message, tone })
+    window.setTimeout(() => setActionStatus({ message: '', tone: '' }), 1400)
+  }
+
+  async function copyText() {
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopied(true)
+      flashActionStatus('Copied to clipboard.')
+      window.setTimeout(() => setCopied(false), 1200)
+    } catch {
+      flashActionStatus('Clipboard blocked. Select and copy the text manually.', 'error')
+    }
   }
 
   function saveText() {
@@ -1642,6 +1828,7 @@ function GeneratorPage({
       preview: text,
     })
     setSaveStatus('Saved')
+    flashActionStatus('Saved on this device.')
     window.setTimeout(() => setSaveStatus(''), 1200)
   }
 
@@ -1665,6 +1852,7 @@ function GeneratorPage({
           </button>
         )}
       </div>
+      {actionStatus.message && <p className={`result-status ${actionStatus.tone}`} aria-live="polite">{actionStatus.message}</p>}
       {saveTool && (
         <SavedResultsRail
           emptyText="Saved lines will appear here."
