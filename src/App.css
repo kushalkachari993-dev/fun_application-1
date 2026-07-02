@@ -43,7 +43,7 @@
   height: 42px;
   border-radius: 10px;
   color: #fff;
-  background: linear-gradient(135deg, #214f5b, #2f7d6b);
+  background: linear-gradient(135deg, #24576a, #2f6f83);
   box-shadow: 0 16px 34px rgba(33, 79, 91, 0.28);
 }
 
@@ -84,7 +84,7 @@ nav a.active {
   flex: 0 0 auto;
   padding: 9px 13px;
   border-radius: 999px;
-  background: #9b2f3f;
+  background: #a65752;
   box-shadow: 0 12px 24px rgba(155, 47, 63, 0.22);
   font-size: 13px;
 }
@@ -210,7 +210,7 @@ nav a.active {
 
 .eyebrow,
 .mini-label {
-  color: #ba4b35;
+  color: #b45a4e;
   font-size: 12px;
   font-weight: 950;
   letter-spacing: 0.08em;
@@ -275,7 +275,7 @@ nav a.active {
 }
 
 .preview-header strong {
-  color: #2f7d6b;
+  color: #2f6f83;
   background: #e5f3ee;
   border-radius: 999px;
   padding: 7px 10px;
@@ -294,7 +294,7 @@ nav a.active {
   width: 82%;
   height: 100%;
   border-radius: inherit;
-  background: linear-gradient(90deg, #ba4b35, #e3ac56, #2f7d6b);
+  background: linear-gradient(90deg, #b45a4e, #e3ac56, #2f6f83);
 }
 
 .preview-grid {
@@ -471,7 +471,7 @@ nav a.active {
 }
 
 .meter {
-  --card-accent: #1f7282;
+  --card-accent: #2f6f83;
   --card-soft: #eef8f8;
 }
 
@@ -481,42 +481,42 @@ nav a.active {
 }
 
 .apology {
-  --card-accent: #ba4b35;
+  --card-accent: #b45a4e;
   --card-soft: #fff0ed;
 }
 
 .compliment {
-  --card-accent: #6d5aa4;
+  --card-accent: #5b68a6;
   --card-soft: #f3f0ff;
 }
 
 .date {
-  --card-accent: #2f7d4c;
+  --card-accent: #3d866d;
   --card-soft: #edf8ef;
 }
 
 .emergency {
-  --card-accent: #9b2f3f;
+  --card-accent: #a65752;
   --card-soft: #fff0f2;
 }
 
 .secret {
-  --card-accent: #3d5a80;
+  --card-accent: #4b628f;
   --card-soft: #edf3fb;
 }
 
 .mission {
-  --card-accent: #b05a7a;
+  --card-accent: #b85f8b;
   --card-soft: #fff0f6;
 }
 
 .play {
-  --card-accent: #d06b22;
+  --card-accent: #c7792f;
   --card-soft: #fff3df;
 }
 
 .room {
-  --card-accent: #2671b9;
+  --card-accent: #466fb3;
   --card-soft: #edf6ff;
 }
 
@@ -566,7 +566,7 @@ nav a.active {
 
 .meter-fill {
   height: 100%;
-  background: linear-gradient(90deg, #ba4b35, #e3ac56, #2f7d6b);
+  background: linear-gradient(90deg, #b45a4e, #e3ac56, #2f6f83);
   transition: width 260ms ease;
 }
 
@@ -587,7 +587,7 @@ nav a.active {
 }
 
 .status-row strong {
-  color: #1f7282;
+  color: #2f6f83;
   font-size: clamp(36px, 6vw, 52px);
   line-height: 1;
 }
@@ -628,7 +628,7 @@ button {
   border: 0;
   border-radius: 12px;
   color: #fff;
-  background: #1f7282;
+  background: #2f6f83;
   padding: 13px 18px;
   margin-top: 0;
   font: inherit;
@@ -643,7 +643,7 @@ button {
 
 button:hover {
   transform: translateY(-1px);
-  background: #195f6c;
+  background: #24576a;
   box-shadow: 0 16px 30px rgba(31, 114, 130, 0.24);
 }
 
@@ -687,7 +687,7 @@ button:hover {
   display: inline-flex;
   align-self: flex-start;
   margin-top: 16px;
-  color: #195f6c;
+  color: #24576a;
   background: #e4f2f3;
   border-radius: 999px;
   padding: 7px 11px;
@@ -744,7 +744,7 @@ button:hover {
 }
 
 .date-topline strong {
-  color: #2f7d4c;
+  color: #3d866d;
   background: #e5f3ee;
   border-radius: 999px;
   padding: 8px 12px;
@@ -763,7 +763,7 @@ button:hover {
 
 .date-card button {
   margin-top: 28px;
-  background: #2f7d4c;
+  background: #3d866d;
   box-shadow: 0 12px 24px rgba(47, 125, 76, 0.18);
 }
 
@@ -794,8 +794,8 @@ button:hover {
 .emergency-options button:hover,
 .emergency-options button.active {
   color: #fff;
-  background: #9b2f3f;
-  border-color: #9b2f3f;
+  background: #a65752;
+  border-color: #a65752;
   box-shadow: 0 14px 28px rgba(155, 47, 63, 0.18);
 }
 
@@ -808,7 +808,7 @@ button:hover {
 }
 
 .emergency-card .status-row strong {
-  color: #9b2f3f;
+  color: #a65752;
 }
 
 .opener {
@@ -818,7 +818,7 @@ button:hover {
 }
 
 .danger-fill {
-  background: linear-gradient(90deg, #2f7d4c, #e3ac56, #9b2f3f);
+  background: linear-gradient(90deg, #3d866d, #e3ac56, #a65752);
 }
 
 .secret-card {
@@ -850,7 +850,7 @@ button:hover {
   position: relative;
   z-index: 1;
   margin-top: 26px;
-  background: #3d5a80;
+  background: #4b628f;
   box-shadow: 0 12px 24px rgba(61, 90, 128, 0.18);
 }
 
@@ -889,12 +889,12 @@ button:hover {
 }
 
 .mission-card .date-topline strong {
-  color: #b05a7a;
+  color: #b85f8b;
   background: #fde8f0;
 }
 
 .mission-card button {
-  background: #b05a7a;
+  background: #b85f8b;
   box-shadow: 0 12px 24px rgba(176, 90, 122, 0.18);
 }
 
@@ -974,7 +974,7 @@ button:hover {
 .play-scoreboard strong {
   display: block;
   margin-top: 5px;
-  color: #d06b22;
+  color: #c7792f;
   font-size: 34px;
   line-height: 1;
 }
@@ -996,7 +996,7 @@ button:hover {
 .play-tabs button:hover,
 .play-tabs button.active {
   color: #fff;
-  background: #d06b22;
+  background: #c7792f;
   box-shadow: 0 14px 30px rgba(208, 107, 34, 0.18);
 }
 
@@ -1017,7 +1017,7 @@ button:hover {
 
 .game-panel > button {
   margin-top: 24px;
-  background: #d06b22;
+  background: #c7792f;
   box-shadow: 0 12px 24px rgba(208, 107, 34, 0.18);
 }
 
@@ -1046,7 +1046,7 @@ button:hover {
 
 .rather-options button:hover {
   color: #fff;
-  background: #d06b22;
+  background: #c7792f;
   box-shadow: 0 14px 30px rgba(208, 107, 34, 0.18);
 }
 
@@ -1086,7 +1086,7 @@ button:hover {
   gap: 3px;
   margin-top: 30px;
   padding-left: 16px;
-  border-left: 4px solid #2671b9;
+  border-left: 4px solid #466fb3;
 }
 
 .lobby-note strong {
@@ -1102,7 +1102,7 @@ button:hover {
   display: grid;
   gap: 15px;
   padding: clamp(22px, 4vw, 34px);
-  border: 1px solid rgba(38, 113, 185, 0.16);
+  border: 1px solid rgba(70, 111, 179, 0.16);
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.88);
   box-shadow: 0 24px 70px rgba(35, 50, 58, 0.1);
@@ -1129,15 +1129,15 @@ button:hover {
 }
 
 .join-room-form label:nth-child(2) input {
-  color: #2671b9;
+  color: #466fb3;
   font-size: 22px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 
 .join-room-form input:focus {
-  outline: 3px solid rgba(38, 113, 185, 0.2);
-  border-color: #2671b9;
+  outline: 3px solid rgba(70, 111, 179, 0.22);
+  border-color: #466fb3;
 }
 
 .room-hero {
@@ -1149,7 +1149,7 @@ button:hover {
   border: 1px solid rgba(35, 50, 58, 0.1);
   border-radius: 8px;
   background:
-    linear-gradient(135deg, rgba(38, 113, 185, 0.14), transparent 28rem),
+    linear-gradient(135deg, rgba(70, 111, 179, 0.14), transparent 28rem),
     rgba(255, 255, 255, 0.9);
   box-shadow: 0 24px 70px rgba(35, 50, 58, 0.1);
 }
@@ -1172,14 +1172,14 @@ button:hover {
   margin-top: 14px;
   padding: 8px 11px;
   border-radius: 999px;
-  color: #2671b9;
+  color: #466fb3;
   background: #e3f1ff;
   font-size: 13px;
   font-weight: 950;
 }
 
 .sync-pill.live {
-  color: #2f7d4c;
+  color: #3d866d;
   background: #e5f3ee;
 }
 
@@ -1190,7 +1190,7 @@ button:hover {
 }
 
 .sync-pill.offline {
-  color: #9b2f3f;
+  color: #a65752;
   background: #fff0f2;
 }
 
@@ -1205,7 +1205,7 @@ button:hover {
   padding: 11px 13px;
   border: 1px solid rgba(155, 47, 63, 0.18);
   border-radius: 12px;
-  color: #9b2f3f;
+  color: #a65752;
   background: #fff0f2;
   font-size: 14px;
   font-weight: 850;
@@ -1213,7 +1213,7 @@ button:hover {
 
 .room-code-card {
   padding: 20px;
-  border: 1px solid rgba(38, 113, 185, 0.16);
+  border: 1px solid rgba(70, 111, 179, 0.16);
   border-radius: 8px;
   background: rgba(237, 246, 255, 0.78);
 }
@@ -1229,7 +1229,7 @@ button:hover {
 .room-code-card strong {
   display: block;
   margin-top: 8px;
-  color: #2671b9;
+  color: #466fb3;
   font-size: clamp(34px, 5vw, 54px);
   line-height: 1;
   letter-spacing: 0.08em;
@@ -1262,7 +1262,7 @@ button:hover {
 }
 
 .players-panel .date-topline strong {
-  color: #2671b9;
+  color: #466fb3;
   background: #e3f1ff;
 }
 
@@ -1290,7 +1290,7 @@ button:hover {
   height: 42px;
   border-radius: 12px;
   color: #fff;
-  background: #2671b9;
+  background: #466fb3;
   font-weight: 950;
 }
 
@@ -1301,7 +1301,7 @@ button:hover {
 }
 
 .player-pill small {
-  color: #2671b9;
+  color: #466fb3;
   font-weight: 900;
 }
 
@@ -1313,7 +1313,7 @@ button:hover {
 }
 
 .player-pill div small.online {
-  color: #2f7d4c;
+  color: #3d866d;
 }
 
 .empty-player-list,
@@ -1348,20 +1348,20 @@ button:hover {
 }
 
 .player-form input:focus {
-  outline: 3px solid rgba(38, 113, 185, 0.24);
+  outline: 3px solid rgba(70, 111, 179, 0.24);
 }
 
 .player-form button,
 .room-code-card button,
 .round-card > button {
-  background: #2671b9;
-  box-shadow: 0 12px 24px rgba(38, 113, 185, 0.18);
+  background: #466fb3;
+  box-shadow: 0 12px 24px rgba(70, 111, 179, 0.18);
 }
 
 .player-form button:hover,
 .room-code-card button:hover,
 .round-card > button:hover {
-  background: #1d5d99;
+  background: #365a94;
 }
 
 .room-tabs {
@@ -1381,8 +1381,8 @@ button:hover {
 .room-tabs button:hover,
 .room-tabs button.active {
   color: #fff;
-  background: #2671b9;
-  box-shadow: 0 14px 30px rgba(38, 113, 185, 0.18);
+  background: #466fb3;
+  box-shadow: 0 14px 30px rgba(70, 111, 179, 0.18);
 }
 
 .room-tabs button:disabled {
@@ -1399,7 +1399,7 @@ button:hover {
 
 .room-tabs button.active:disabled {
   color: #fff;
-  background: #2671b9;
+  background: #466fb3;
 }
 
 .round-card {
@@ -1409,7 +1409,7 @@ button:hover {
 }
 
 .round-card .date-topline strong {
-  color: #2671b9;
+  color: #466fb3;
   background: #e3f1ff;
 }
 
@@ -1430,14 +1430,14 @@ button:hover {
 .reaction-row button {
   color: var(--ink);
   background: #edf6ff;
-  border: 1px solid rgba(38, 113, 185, 0.16);
+  border: 1px solid rgba(70, 111, 179, 0.16);
   box-shadow: none;
 }
 
 .reaction-row button:hover {
   color: #fff;
-  background: #2671b9;
-  box-shadow: 0 14px 30px rgba(38, 113, 185, 0.18);
+  background: #466fb3;
+  box-shadow: 0 14px 30px rgba(70, 111, 179, 0.18);
 }
 
 .board-game {
@@ -1896,7 +1896,7 @@ button:disabled:hover {
 .segmented-control button:hover,
 .segmented-control button.active {
   color: #fff;
-  background: #6d5aa4;
+  background: #5b68a6;
   box-shadow: none;
 }
 
