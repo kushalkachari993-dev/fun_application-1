@@ -22,6 +22,8 @@ model: llama-3.3-70b-versatile
 endpoint: https://api.groq.com/openai/v1/chat/completions
 ```
 
+The function also applies a best-effort per-user limit of 12 generations per 10 minutes and aborts slow upstream requests. Because serverless instances do not share memory, use a durable rate-limit store (such as Vercel KV) if you need a strict global quota at larger scale.
+
 Add the API key in Vercel:
 
 1. Open Vercel -> Project -> Settings -> Environment Variables.
@@ -48,6 +50,8 @@ rooms/{roomId}/history/{matchId}
 ```
 
 Chat queries only the latest 60 messages, and match history queries only the latest 12 results to keep Firestore usage predictable.
+
+Published rules keep chat and match history member-only. Join requests can be read only by the requester and room host. Basic room/player state remains readable to signed-in anonymous users because the current join handshake uses it to discover and recover rooms; moving discovery metadata to a separate public document would allow that surface to be tightened further.
 
 Hosts can remove non-host players from the room. Each removal adds one strike in `rooms/{roomId}.kickedPlayers`. Strike 1 and 2 remove the player from the roster but let them rejoin; strike 3 blocks that player profile from the room permanently. Kicked players are also cleared from Chess/Ludo seats and current scores.
 

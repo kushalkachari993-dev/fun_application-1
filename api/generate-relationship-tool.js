@@ -1,9 +1,11 @@
 import { createVerify } from 'node:crypto'
+import { consumeRateLimit } from './rate-limit.js'
 
 const firebaseCertsUrl = 'https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com'
 const groqEndpoint = 'https://api.groq.com/openai/v1/chat/completions'
 const groqModel = 'llama-3.3-70b-versatile'
 const maxBodyBytes = 10_000
+const groqTimeoutMs = 12_000
 
 let cachedCerts = null
 let cachedCertsExpiresAt = 0
@@ -219,6 +221,8 @@ async function callGroq(tool, answers) {
   }
 
   let response
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), groqTimeoutMs)
   try {
     response = await fetch(groqEndpoint, {
       method: 'POST',
@@ -236,14 +240,16 @@ async function callGroq(tool, answers) {
         temperature: 0.85,
         max_completion_tokens: tool.maxTokens,
       }),
+      signal: controller.signal,
     })
   } catch {
     throw createHttpError(503, 'groq-unavailable', 'Could not reach Groq. Try again in a moment.')
+  } finally {
+    clearTimeout(timeout)
   }
 
   if (!response.ok) {
-    const errorText = await response.text()
-    throw createHttpError(503, 'groq-request-failed', `Groq request failed: ${text(errorText, 240) || response.statusText}`)
+    throw createHttpError(503, 'groq-request-failed', 'The AI provider could not complete this request. Try again in a moment.')
   }
 
   const payload = await response.json()
@@ -273,7 +279,13 @@ export default async function handler(req, res) {
   }
 
   try {
-    await verifyFirebaseIdToken(getBearerToken(req))
+    const user = await verifyFirebaseIdToken(getBearerToken(req))
+    const rateLimit = consumeRateLimit(user.sub)
+    res.setHeader('X-RateLimit-Remaining', String(rateLimit.remaining))
+    if (!rateLimit.allowed) {
+      res.setHeader('Retry-After', String(rateLimit.retryAfterSeconds))
+      throw createHttpError(429, 'rate-limited', 'Too many AI requests. Wait a few minutes and try again.')
+    }
 
     const body = await readRequestBody(req)
     const toolName = text(body.tool, 40)

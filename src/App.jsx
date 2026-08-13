@@ -1,4 +1,5 @@
-import { Suspense, lazy, useEffect, useState } from 'react'
+import { Suspense, lazy, useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import {
   Link,
   NavLink,
@@ -9,7 +10,6 @@ import {
   useLocation,
 } from 'react-router-dom'
 import {
-  Activity,
   ArrowRight,
   BarChart3,
   Bookmark,
@@ -344,37 +344,6 @@ const pages = [
   },
 ]
 
-const homeFocusActions = [
-  {
-    title: 'Make something personal',
-    detail: 'Use the AI-assisted generators when the default line feels too generic.',
-    path: '/compliment-generator',
-    icon: WandSparkles,
-    tone: 'teal',
-  },
-  {
-    title: 'Start a live room',
-    detail: 'Share one code, keep chat and score in the same place, then hand off host when needed.',
-    path: '/game-room',
-    icon: Gamepad2,
-    tone: 'blue',
-  },
-  {
-    title: 'Leave a signal',
-    detail: 'Send quick feedback after a confusing moment so the next polish pass has real clues.',
-    path: null,
-    icon: MessageCircleHeart,
-    tone: 'rose',
-  },
-]
-
-const onboardingSteps = [
-  ['Pick', 'Choose one quick tool or a live room.'],
-  ['Personalize', 'Add one detail before using AI.'],
-  ['Save', 'Keep the best result on this device.'],
-  ['Share', 'Copy a line or invite friends by room code.'],
-]
-
 function randomItem(items, current) {
   if (items.length === 1) return items[0]
   let next = current
@@ -485,14 +454,27 @@ async function ensureAnonymousUser() {
 async function generateAiRelationshipContent(tool, answers) {
   const user = await ensureAnonymousUser()
   const token = await user.getIdToken()
-  const response = await fetch('/api/generate-relationship-tool', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ tool, answers }),
-  })
+  const controller = new AbortController()
+  const timeout = window.setTimeout(() => controller.abort(), 15_000)
+  let response
+  try {
+    response = await fetch('/api/generate-relationship-tool', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ tool, answers }),
+      signal: controller.signal,
+    })
+  } catch (error) {
+    if (error?.name === 'AbortError') {
+      throw new Error('AI took too long to respond. Try again in a moment.', { cause: error })
+    }
+    throw error
+  } finally {
+    window.clearTimeout(timeout)
+  }
 
   let payload
   try {
@@ -569,6 +551,8 @@ function Layout() {
   const isHome = location.pathname === '/'
   const [funMode, setFunMode] = useState(false)
   const [navOpen, setNavOpen] = useState(false)
+  const [toolsManuallyOpen, setToolsManuallyOpen] = useState(false)
+  const [compactNav, setCompactNav] = useState(() => window.matchMedia('(max-width: 900px)').matches)
   const [feedbackOpen, setFeedbackOpen] = useState(false)
   const [showOnboarding, setShowOnboarding] = useState(() => {
     try {
@@ -581,13 +565,26 @@ function Layout() {
   const [alert, setAlert] = useState(chaosAlerts[0])
   const currentPage = pages.find((page) => page.path === location.pathname)
   const relationshipPages = pages.slice(0, 8)
-  const playPages = pages.slice(8)
+  const relationshipRouteActive = relationshipPages.some((page) => page.path === location.pathname)
+  const toolsOpen = toolsManuallyOpen || relationshipRouteActive
 
   useEffect(() => {
-    const openFeedback = () => setFeedbackOpen(true)
-    window.addEventListener('open-feedback', openFeedback)
-    return () => window.removeEventListener('open-feedback', openFeedback)
+    const media = window.matchMedia('(max-width: 900px)')
+    const updateCompactNav = () => setCompactNav(media.matches)
+    updateCompactNav()
+    media.addEventListener('change', updateCompactNav)
+    return () => media.removeEventListener('change', updateCompactNav)
   }, [])
+
+  useEffect(() => {
+    const title = currentPageTitle(location.pathname)
+    const description = currentPageDescription(location.pathname)
+      || 'Playful relationship tools, party games, and live rooms for friends.'
+    document.title = location.pathname === '/' ? 'Just For Fun HQ' : `${title} | Just For Fun`
+    document.querySelector('meta[name="description"]')?.setAttribute('content', description)
+    document.querySelector('meta[property="og:title"]')?.setAttribute('content', title)
+    document.querySelector('meta[property="og:description"]')?.setAttribute('content', description)
+  }, [location.pathname])
 
   function dismissOnboarding() {
     try {
@@ -612,13 +609,19 @@ function Layout() {
   return (
     <main className={`app-shell ${funMode ? 'fun-mode' : ''}`}>
       <FloatingStickers />
-      <button
-        className={`sidebar-scrim ${navOpen ? 'visible' : ''}`}
-        type="button"
-        aria-label="Close navigation"
-        onClick={() => setNavOpen(false)}
-      />
-      <aside className={`app-sidebar ${navOpen ? 'open' : ''}`}>
+      {compactNav && navOpen && (
+        <button
+          className="sidebar-scrim visible"
+          type="button"
+          aria-label="Close navigation"
+          onClick={() => setNavOpen(false)}
+        />
+      )}
+      <aside
+        className={`app-sidebar ${navOpen ? 'open' : ''}`}
+        aria-hidden={compactNav && !navOpen ? 'true' : undefined}
+        inert={compactNav && !navOpen ? true : undefined}
+      >
         <div className="sidebar-header">
           <Link className="brand" to="/" onClick={() => setNavOpen(false)}>
             <span className="brand-mark"><Sparkles size={19} /></span>
@@ -633,40 +636,45 @@ function Layout() {
         </div>
 
         <nav className="sidebar-nav" aria-label="Main pages">
+          <span className="nav-section-label">Explore</span>
           <NavLink end to="/" onClick={() => setNavOpen(false)}>
             <HomeIcon size={18} />
             <span>Overview</span>
           </NavLink>
-          <span className="nav-section-label">Relationship tools</span>
-          {relationshipPages.map((page) => {
-            const Icon = page.icon
-            return (
-              <NavLink key={page.path} to={page.path} onClick={() => setNavOpen(false)}>
-                <Icon size={18} />
-                <span>{page.title.replace(' Generator', '').replace(' Tracker', '')}</span>
-              </NavLink>
-            )
-          })}
-          <span className="nav-section-label">Play together</span>
-          {playPages.map((page) => {
-            const Icon = page.icon
-            return (
-              <NavLink key={page.path} to={page.path} onClick={() => setNavOpen(false)}>
-                <Icon size={18} />
-                <span>{page.title}</span>
-              </NavLink>
-            )
-          })}
+          <NavLink className="sidebar-room-link" to="/game-room" onClick={() => setNavOpen(false)}>
+            <Gamepad2 size={18} />
+            <span>Live Room</span>
+            <small>Create or join</small>
+          </NavLink>
+          <NavLink to="/play-room" onClick={() => setNavOpen(false)}>
+            <PartyPopper size={18} />
+            <span>Party Games</span>
+          </NavLink>
+          <button
+            className={`sidebar-tools-toggle ${relationshipRouteActive ? 'active' : ''}`}
+            type="button"
+            aria-controls="sidebar-quick-tools"
+            aria-expanded={toolsOpen}
+            onClick={() => setToolsManuallyOpen((current) => !current)}
+          >
+            <WandSparkles size={18} />
+            <span>Quick Tools</span>
+            <ChevronRight className={toolsOpen ? 'expanded' : ''} size={17} />
+          </button>
+          <div className="sidebar-tool-list" id="sidebar-quick-tools" hidden={!toolsOpen}>
+            {relationshipPages.map((page) => {
+              const Icon = page.icon
+              return (
+                <NavLink key={page.path} to={page.path} onClick={() => setNavOpen(false)}>
+                  <Icon size={16} />
+                  <span>{page.title.replace(' Generator', '').replace(' Tracker', '')}</span>
+                </NavLink>
+              )
+            })}
+          </div>
         </nav>
 
         <div className="sidebar-footer">
-          <div className="sidebar-status">
-            <span className="status-dot" />
-            <div>
-              <strong>HQ operational</strong>
-              <small>All systems unserious</small>
-            </div>
-          </div>
           <button className={`chaos-control ${funMode ? 'active' : ''}`} type="button" onClick={toggleFunMode}>
             <Zap size={17} />
             <span>{funMode ? 'Chaos enabled' : 'Enable chaos'}</span>
@@ -694,11 +702,11 @@ function Layout() {
             </div>
           </div>
           <div className="header-actions">
-            <button className="header-feedback" type="button" onClick={() => setFeedbackOpen(true)}>
+            <button className="header-feedback" type="button" aria-label="Open feedback" onClick={() => setFeedbackOpen(true)}>
               <MessageCircleHeart size={16} />
               <span>Feedback</span>
             </button>
-            <button className={`header-chaos ${funMode ? 'active' : ''}`} type="button" onClick={toggleFunMode}>
+            <button className={`header-chaos ${funMode ? 'active' : ''}`} type="button" aria-label={funMode ? 'Disable chaos mode' : 'Enable chaos mode'} onClick={toggleFunMode}>
               <Zap size={16} />
               <span>{funMode ? 'Chaos on' : 'Chaos mode'}</span>
             </button>
@@ -711,31 +719,46 @@ function Layout() {
             <span>{alert}</span>
           </div>
         )}
-        <button
-          className="burst-badge"
-          type="button"
-          onClick={() => {
-            setBurst(randomItem(funBursts, burst))
-            setAlert(randomItem(chaosAlerts, alert))
-          }}
-        >
-          <Sparkles size={15} />
-          <span>{burst}</span>
-        </button>
+        {funMode && (
+          <button
+            className="burst-badge"
+            type="button"
+            onClick={() => {
+              setBurst(randomItem(funBursts, burst))
+              setAlert(randomItem(chaosAlerts, alert))
+            }}
+          >
+            <Sparkles size={15} />
+            <span>{burst}</span>
+          </button>
+        )}
 
         <section className={isHome ? 'hero home-hero' : 'hero compact-hero'}>
           <div>
             <p className="eyebrow">{isHome ? 'Relationship control room' : currentPage?.title}</p>
-            <h1>{isHome ? 'Your shared fun dashboard' : currentPageTitle(location.pathname)}</h1>
+            <h1>{isHome ? 'One room for your favorite people' : currentPageTitle(location.pathname)}</h1>
             <p>
               {isHome
-                ? 'Quick tools, group games, and delightfully unnecessary relationship analytics in one place.'
+                ? 'Create a live room for chat, scores, Chess, and Ludo—or grab a quick tool when you just need the right idea.'
                 : currentPageDescription(location.pathname)}
             </p>
+            {isHome && (
+              <div className="hero-actions">
+                <Link className="hero-primary-action" to="/game-room">
+                  <Gamepad2 size={18} />
+                  Create or join a room
+                  <ArrowRight size={18} />
+                </Link>
+                <Link className="hero-secondary-action" to="/compliment-generator">
+                  <WandSparkles size={17} />
+                  Try a quick tool
+                </Link>
+              </div>
+            )}
           </div>
           {isHome && <HeroPreview />}
         </section>
-        {isHome && <ChaosConsole active={funMode} />}
+        {isHome && funMode && <ChaosConsole active />}
 
         <Outlet />
         {showOnboarding && <OnboardingSheet onDismiss={dismissOnboarding} />}
@@ -745,12 +768,73 @@ function Layout() {
   )
 }
 
+function useModalFocus(dialogRef, onClose) {
+  useEffect(() => {
+    const dialog = dialogRef.current
+    const previouslyFocused = document.activeElement
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+
+    const focusableSelector = [
+      'a[href]',
+      'button:not([disabled])',
+      'textarea:not([disabled])',
+      'input:not([disabled])',
+      'select:not([disabled])',
+      '[tabindex]:not([tabindex="-1"])',
+    ].join(',')
+
+    const focusFirstControl = () => {
+      const firstControl = dialog?.querySelector(focusableSelector)
+      ;(firstControl || dialog)?.focus()
+    }
+
+    function handleKeyDown(event) {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        onClose()
+        return
+      }
+      if (event.key !== 'Tab' || !dialog) return
+
+      const controls = [...dialog.querySelectorAll(focusableSelector)]
+        .filter((element) => element.getClientRects().length > 0)
+      if (!controls.length) {
+        event.preventDefault()
+        dialog.focus()
+        return
+      }
+
+      const first = controls[0]
+      const last = controls[controls.length - 1]
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault()
+        last.focus()
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault()
+        first.focus()
+      }
+    }
+
+    const focusTimer = window.setTimeout(focusFirstControl, 0)
+    document.addEventListener('keydown', handleKeyDown)
+    return () => {
+      window.clearTimeout(focusTimer)
+      document.removeEventListener('keydown', handleKeyDown)
+      document.body.style.overflow = previousOverflow
+      previouslyFocused?.focus?.()
+    }
+  }, [dialogRef, onClose])
+}
+
 function FeedbackSheet({ onClose }) {
   const location = useLocation()
+  const dialogRef = useRef(null)
   const [type, setType] = useState('idea')
   const [message, setMessage] = useState('')
   const [status, setStatus] = useState({ message: '', tone: '' })
   const [submitting, setSubmitting] = useState(false)
+  useModalFocus(dialogRef, onClose)
 
   async function submit(event) {
     event.preventDefault()
@@ -773,15 +857,29 @@ function FeedbackSheet({ onClose }) {
     }
   }
 
-  return (
-    <section className="feedback-shell" aria-label="Feedback">
-      <form className="feedback-sheet" onSubmit={submit}>
+  return createPortal(
+    <section
+      className="feedback-shell"
+      aria-hidden="false"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose()
+      }}
+    >
+      <form
+        className="feedback-sheet"
+        aria-labelledby="feedback-dialog-title"
+        aria-modal="true"
+        ref={dialogRef}
+        role="dialog"
+        tabIndex="-1"
+        onSubmit={submit}
+      >
         <button className="icon-button feedback-close" type="button" aria-label="Close feedback" onClick={onClose}>
           <X size={18} />
         </button>
         <div className="feedback-copy">
           <span className="mini-label">Feedback</span>
-          <h2>Tell me what to improve.</h2>
+          <h2 id="feedback-dialog-title">Tell me what to improve.</h2>
           <p>Bug, idea, confusing moment, or something you liked.</p>
         </div>
         <div className="feedback-type-grid" aria-label="Feedback type">
@@ -817,7 +915,8 @@ function FeedbackSheet({ onClose }) {
         </div>
         {status.message && <p className={`feedback-status ${status.tone}`} aria-live="polite">{status.message}</p>}
       </form>
-    </section>
+    </section>,
+    document.body,
   )
 }
 
@@ -846,6 +945,8 @@ function StateCallout({
 }
 
 function OnboardingSheet({ onDismiss }) {
+  const dialogRef = useRef(null)
+  useModalFocus(dialogRef, onDismiss)
   const routes = [
     {
       title: 'Relationship tools',
@@ -867,25 +968,29 @@ function OnboardingSheet({ onDismiss }) {
     },
   ]
 
-  return (
-    <section className="onboarding-shell" aria-label="Start here">
-      <div className="onboarding-sheet">
+  return createPortal(
+    <section
+      className="onboarding-shell"
+      aria-hidden="false"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onDismiss()
+      }}
+    >
+      <div
+        className="onboarding-sheet"
+        aria-labelledby="onboarding-dialog-title"
+        aria-modal="true"
+        ref={dialogRef}
+        role="dialog"
+        tabIndex="-1"
+      >
         <button className="icon-button onboarding-close" type="button" aria-label="Dismiss start guide" onClick={onDismiss}>
           <X size={18} />
         </button>
         <div className="onboarding-copy">
           <span className="mini-label">Start here</span>
-          <h2>Pick the kind of fun first.</h2>
-          <p>Fast solo tools, group prompts, and live rooms are all one click away.</p>
-        </div>
-        <div className="onboarding-steps" aria-label="Quick start flow">
-          {onboardingSteps.map(([label, detail], index) => (
-            <div key={label}>
-              <span>{index + 1}</span>
-              <strong>{label}</strong>
-              <small>{detail}</small>
-            </div>
-          ))}
+          <h2 id="onboarding-dialog-title">What sounds fun right now?</h2>
+          <p>Choose one place to start. You can explore everything else whenever you want.</p>
         </div>
         <div className="onboarding-actions">
           {routes.map((route) => {
@@ -906,7 +1011,8 @@ function OnboardingSheet({ onDismiss }) {
           Continue exploring
         </button>
       </div>
-    </section>
+    </section>,
+    document.body,
   )
 }
 
@@ -924,35 +1030,33 @@ function FloatingStickers() {
 function Home() {
   const relationshipTools = pages.slice(0, 8)
   const playTools = pages.slice(8)
+  const [showAllTools, setShowAllTools] = useState(false)
+  const featuredToolPaths = [
+    '/compliment-generator',
+    '/date-spinner',
+    '/apology-generator',
+    '/mission-wheel',
+  ]
+  const featuredTools = featuredToolPaths
+    .map((path) => relationshipTools.find((page) => page.path === path))
+    .filter(Boolean)
+  const additionalTools = relationshipTools.filter((page) => !featuredToolPaths.includes(page.path))
+  const visibleTools = showAllTools ? [...featuredTools, ...additionalTools] : featuredTools
 
   return (
     <>
-      <section className="quick-stats" aria-label="Fake dashboard stats">
-        <div>
-          <span className="stat-icon danger"><Activity size={18} /></span>
-          <span>Drama risk</span>
-          <strong>12%</strong>
-        </div>
-        <div>
-          <span className="stat-icon success"><Check size={18} /></span>
-          <span>Snack readiness</span>
-          <strong>98%</strong>
-        </div>
-        <div>
-          <span className="stat-icon info"><Zap size={18} /></span>
-          <span>Reply speed</span>
-          <strong>Maybe</strong>
-        </div>
-      </section>
-
-      <HomeFocusStrip />
-
       <HomeSection
         label="Relationship tools"
         title="Tiny helpers for texts, plans, and emotional weather"
         description="Quick generators first, AI personalization when the moment needs a sharper line."
+        action={(
+          <button className="home-tools-toggle" type="button" onClick={() => setShowAllTools((current) => !current)}>
+            {showAllTools ? 'Show fewer tools' : `Explore ${additionalTools.length} more tools`}
+            <ChevronRight className={showAllTools ? 'expanded' : ''} size={17} />
+          </button>
+        )}
       >
-        {relationshipTools.map((page) => (
+        {visibleTools.map((page) => (
           <FeatureCard page={page} key={page.path} />
         ))}
       </HomeSection>
@@ -970,41 +1074,7 @@ function Home() {
   )
 }
 
-function HomeFocusStrip() {
-  return (
-    <section className="home-focus-strip" aria-label="Recommended next actions">
-      {homeFocusActions.map((action) => {
-        const Icon = action.icon
-        const content = (
-          <>
-            <span className={`focus-icon ${action.tone}`}><Icon size={18} /></span>
-            <div>
-              <strong>{action.title}</strong>
-              <small>{action.detail}</small>
-            </div>
-            {action.path && <ChevronRight size={18} />}
-          </>
-        )
-
-        if (!action.path) {
-          return (
-            <button className="home-focus-card" type="button" key={action.title} onClick={() => window.dispatchEvent(new CustomEvent('open-feedback'))}>
-              {content}
-            </button>
-          )
-        }
-
-        return (
-          <Link className="home-focus-card" key={action.title} to={action.path}>
-            {content}
-          </Link>
-        )
-      })}
-    </section>
-  )
-}
-
-function HomeSection({ children, description, label, title }) {
+function HomeSection({ action, children, description, label, title }) {
   return (
     <section className="home-section">
       <div className="home-section-heading">
@@ -1015,6 +1085,7 @@ function HomeSection({ children, description, label, title }) {
       <div className="page-grid">
         {children}
       </div>
+      {action}
     </section>
   )
 }
@@ -1058,23 +1129,20 @@ function HeroPreview() {
   return (
     <aside className="hero-preview" aria-label="Dashboard preview">
       <div className="preview-header">
-        <span>Live snapshot</span>
-        <strong><span className="status-dot" /> HQ online</strong>
-      </div>
-      <div className="preview-meter">
-        <div />
+        <span>Live room preview</span>
+        <strong><span className="status-dot" /> No account needed</strong>
       </div>
       <div className="preview-grid">
         <div>
-          <span><Sparkles size={14} /> Compliments</span>
-          <strong>Ready</strong>
+          <span><MessageCircleHeart size={14} /> Chat</span>
+          <strong>Synced</strong>
         </div>
         <div>
-          <span><MessageCircleHeart size={14} /> Apology</span>
-          <strong>Armed</strong>
+          <span><Gamepad2 size={14} /> Games</span>
+          <strong>Ready</strong>
         </div>
       </div>
-      <p>Official status: snacks advised, jokes approved, drama contained.</p>
+      <p>Share one code. Everyone joins from their own phone.</p>
     </aside>
   )
 }

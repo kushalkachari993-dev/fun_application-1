@@ -1199,7 +1199,6 @@ function GameRoom() {
     const playerRef = doc(db, 'rooms', roomCode, 'players', currentPlayer.id)
     const playersRef = collection(db, 'rooms', roomCode, 'players')
     const joinRequestRef = doc(db, 'rooms', roomCode, 'joinRequests', currentPlayer.id)
-    const joinRequestsRef = collection(db, 'rooms', roomCode, 'joinRequests')
     const messagesQuery = query(
       collection(db, 'rooms', roomCode, 'messages'),
       orderBy('createdAt', 'desc'),
@@ -1213,6 +1212,7 @@ function GameRoom() {
     let heartbeatId
     let cancelled = false
     let shouldStartHeartbeat = false
+    const unsubscribers = []
 
     getDocs(playersRef)
       .then((playersSnapshot) => runTransaction(db, async (transaction) => {
@@ -1401,6 +1401,40 @@ function GameRoom() {
       }))
       .then(() => {
         if (cancelled || !shouldStartHeartbeat) return
+        unsubscribers.push(
+          onSnapshot(
+            messagesQuery,
+            { includeMetadataChanges: true },
+            (snapshot) => {
+              const nextMessages = snapshot.docs.map(messageFromDoc).reverse()
+              setRoom((currentRoom) => normalizeRoom({
+                ...currentRoom,
+                messages: nextMessages.filter((message) => message.createdAt >= currentRoom.resetAt),
+              }, roomCode))
+              markSnapshot(snapshot)
+            },
+            (error) => {
+              setSyncStatus('Offline')
+              setSyncError(formatSyncError(error))
+            },
+          ),
+          onSnapshot(
+            historyQuery,
+            { includeMetadataChanges: true },
+            (snapshot) => {
+              const nextHistory = snapshot.docs.map(matchFromDoc).reverse()
+              setRoom((currentRoom) => normalizeRoom({
+                ...currentRoom,
+                history: nextHistory.filter((match) => match.endedAt >= currentRoom.resetAt),
+              }, roomCode))
+              markSnapshot(snapshot)
+            },
+            (error) => {
+              setSyncStatus('Offline')
+              setSyncError(formatSyncError(error))
+            },
+          ),
+        )
         heartbeatId = window.setInterval(() => {
           setDoc(playerRef, {
             uid: currentPlayer.uid || currentPlayer.id,
@@ -1430,7 +1464,7 @@ function GameRoom() {
       setSyncError('')
     }
 
-    const unsubscribers = [
+    unsubscribers.push(
       onSnapshot(
       roomRef,
       { includeMetadataChanges: true },
@@ -1487,22 +1521,20 @@ function GameRoom() {
         },
       ),
       onSnapshot(
-        joinRequestsRef,
+        joinRequestRef,
         { includeMetadataChanges: true },
         (snapshot) => {
-          const nextJoinRequests = Object.fromEntries(
-            snapshot.docs.map((requestSnapshot) => [
-              requestSnapshot.id,
-              joinRequestFromDoc(requestSnapshot),
-            ]),
-          )
           setRoom((currentRoom) => normalizeRoom({
             ...currentRoom,
-            joinRequests: Object.fromEntries(
-              Object.entries(nextJoinRequests).filter(([, request]) => (
-                request.requestedAt >= currentRoom.resetAt
-              )),
-            ),
+            joinRequests: snapshot.exists()
+              ? {
+                  ...currentRoom.joinRequests,
+                  [currentPlayer.id]: joinRequestFromDoc(snapshot),
+                }
+              : Object.fromEntries(
+                  Object.entries(currentRoom.joinRequests)
+                    .filter(([playerId]) => playerId !== currentPlayer.id),
+                ),
           }, roomCode))
           markSnapshot(snapshot)
         },
@@ -1511,39 +1543,7 @@ function GameRoom() {
           setSyncError(formatSyncError(error))
         },
       ),
-      onSnapshot(
-        messagesQuery,
-        { includeMetadataChanges: true },
-        (snapshot) => {
-          const nextMessages = snapshot.docs.map(messageFromDoc).reverse()
-          setRoom((currentRoom) => normalizeRoom({
-            ...currentRoom,
-            messages: nextMessages.filter((message) => message.createdAt >= currentRoom.resetAt),
-          }, roomCode))
-          markSnapshot(snapshot)
-        },
-        (error) => {
-          setSyncStatus('Offline')
-          setSyncError(formatSyncError(error))
-        },
-      ),
-      onSnapshot(
-        historyQuery,
-        { includeMetadataChanges: true },
-        (snapshot) => {
-          const nextHistory = snapshot.docs.map(matchFromDoc).reverse()
-          setRoom((currentRoom) => normalizeRoom({
-            ...currentRoom,
-            history: nextHistory.filter((match) => match.endedAt >= currentRoom.resetAt),
-          }, roomCode))
-          markSnapshot(snapshot)
-        },
-        (error) => {
-          setSyncStatus('Offline')
-          setSyncError(formatSyncError(error))
-        },
-      ),
-    ]
+    )
 
     return () => {
       cancelled = true
@@ -1551,6 +1551,44 @@ function GameRoom() {
       window.clearInterval(heartbeatId)
     }
   }, [authReady, authUid, currentPlayer, currentPlayerLockedOut, hasJoined, reconnectNonce, roomCode])
+
+  useEffect(() => {
+    if (
+      !hasJoined
+      || !isFirebaseConfigured
+      || !authReady
+      || !authUid
+      || currentPlayerLockedOut
+      || !currentPlayerIsMember
+      || !isHost
+    ) return undefined
+
+    const joinRequestsRef = collection(db, 'rooms', roomCode, 'joinRequests')
+    return onSnapshot(
+      joinRequestsRef,
+      { includeMetadataChanges: true },
+      (snapshot) => {
+        const nextJoinRequests = Object.fromEntries(
+          snapshot.docs.map((requestSnapshot) => [
+            requestSnapshot.id,
+            joinRequestFromDoc(requestSnapshot),
+          ]),
+        )
+        setRoom((currentRoom) => normalizeRoom({
+          ...currentRoom,
+          joinRequests: Object.fromEntries(
+            Object.entries(nextJoinRequests).filter(([, request]) => (
+              request.requestedAt >= currentRoom.resetAt
+            )),
+          ),
+        }, roomCode))
+      },
+      (error) => {
+        setSyncStatus('Offline')
+        setSyncError(formatSyncError(error))
+      },
+    )
+  }, [authReady, authUid, currentPlayerIsMember, currentPlayerLockedOut, hasJoined, isHost, roomCode])
 
   useEffect(() => {
     if (!hasJoined || currentPlayerLockedOut || currentPlayerNeedsAdmission) return undefined

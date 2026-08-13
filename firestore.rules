@@ -235,7 +235,7 @@ service cloud.firestore {
       }
 
       match /joinRequests/{playerId} {
-        allow read: if signedIn();
+        allow read: if isOwnPlayer(playerId) || isHost(roomId);
 
         allow create: if isOwnPlayer(playerId)
           && request.resource.data.uid == request.auth.uid
@@ -257,7 +257,7 @@ service cloud.firestore {
       }
 
       match /messages/{messageId} {
-        allow read: if signedIn();
+        allow read: if isMember(roomId);
 
         allow create: if (
           isMemberAfter(roomId)
@@ -291,7 +291,7 @@ service cloud.firestore {
       }
 
       match /history/{matchId} {
-        allow read: if signedIn();
+        allow read: if isMember(roomId);
         allow create: if isHostAfter(roomId);
         allow update, delete: if false;
       }
