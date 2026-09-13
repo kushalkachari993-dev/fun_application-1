@@ -1070,6 +1070,9 @@ function GameRoom() {
   const [qrOpen, setQrOpen] = useState(false)
   const [qrDataUrl, setQrDataUrl] = useState('')
   const [shareStatus, setShareStatus] = useState('')
+  const [roomJoinOpen, setRoomJoinOpen] = useState(false)
+  const [roomJoinCode, setRoomJoinCode] = useState('')
+  const [roomJoinError, setRoomJoinError] = useState('')
   const [exitPromptOpen, setExitPromptOpen] = useState(false)
   const [exitReason, setExitReason] = useState('done_playing')
   const [exitMessage, setExitMessage] = useState('')
@@ -1947,6 +1950,48 @@ function GameRoom() {
     })
   }
 
+  function joinRoomByCode(event) {
+    event.preventDefault()
+    const code = sanitizeRoomCode(roomJoinCode)
+    if (code.length < 4) return
+    if (code === roomCode) {
+      setRoomJoinError('You are already in this room.')
+      return
+    }
+    if (isFirebaseConfigured && !authUid) {
+      setSyncStatus('Signing in')
+      setSyncError('Signing in anonymously. Try joining again in a moment.')
+      return
+    }
+
+    const now = currentTimestamp()
+    const nextPlayer = {
+      ...currentPlayer,
+      id: authUid || currentPlayer.id,
+      uid: authUid || currentPlayer.uid || currentPlayer.id,
+    }
+    savePlayer(nextPlayer)
+    setCurrentPlayer(nextPlayer)
+    updateRoom(createInitialRoom(code, nextPlayer))
+    setPresenceNow(now)
+    setRejoinGraceUntil(now + 5000)
+    setJoinCode(code)
+    setRoomJoinCode('')
+    setRoomJoinError('')
+    setRoomJoinOpen(false)
+    setQrOpen(false)
+    setQrDataUrl('')
+    setShareStatus('')
+    setSyncStatus(isFirebaseConfigured ? 'Connecting' : 'Local demo')
+    setSyncError('')
+    window.history.replaceState(null, '', `/game-room?room=${code}`)
+    logAnalyticsEvent('room_joined', {
+      page: '/game-room',
+      roomCode: code,
+      value: isFirebaseConfigured ? 'live' : 'local',
+    })
+  }
+
   function rejoinCurrentRoom() {
     updateRoom(createInitialRoom(roomCode, currentPlayer))
     setPresenceNow(Date.now())
@@ -2797,6 +2842,19 @@ function GameRoom() {
                 <QrCode size={17} />
                 QR
               </button>
+              <button
+                className={roomJoinOpen ? 'secondary-button active' : 'secondary-button'}
+                type="button"
+                aria-expanded={roomJoinOpen}
+                aria-controls="room-code-join-form"
+                onClick={() => {
+                  setRoomJoinOpen((open) => !open)
+                  setRoomJoinError('')
+                }}
+              >
+                <ArrowRight size={17} />
+                Join Room
+              </button>
               <button className="secondary-button" type="button" onClick={startNewRoom}>
                 <Plus size={17} />
                 New Room
@@ -2806,6 +2864,34 @@ function GameRoom() {
                 Leave
               </button>
             </div>
+            {roomJoinOpen && (
+              <form id="room-code-join-form" className="room-code-join-form" onSubmit={joinRoomByCode}>
+                <label htmlFor="room-code-join-input">Join another room</label>
+                <div className="room-code-join-controls">
+                  <input
+                    id="room-code-join-input"
+                    autoFocus
+                    inputMode="text"
+                    maxLength="6"
+                    value={roomJoinCode}
+                    onChange={(event) => {
+                      setRoomJoinCode(sanitizeRoomCode(event.target.value))
+                      setRoomJoinError('')
+                    }}
+                    placeholder="ABC123"
+                    aria-invalid={Boolean(roomJoinError)}
+                    aria-describedby="room-code-join-help"
+                  />
+                  <button type="submit" disabled={roomJoinCode.length < 4 || syncStatus === 'Saving'}>
+                    <ArrowRight size={16} />
+                    Join
+                  </button>
+                </div>
+                <small id="room-code-join-help" className={roomJoinError ? 'error' : ''}>
+                  {roomJoinError || 'Enter the 4–6 character code shared by the host.'}
+                </small>
+              </form>
+            )}
             {(shareStatus || qrOpen) && (
               <div className="invite-share-panel">
                 {shareStatus && <small>{shareStatus}</small>}

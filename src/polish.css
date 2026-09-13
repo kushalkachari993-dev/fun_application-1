@@ -1547,6 +1547,63 @@ button:active {
   background: #2f6f83;
 }
 
+.room-code-join-form {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid #dce7eb;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.room-code-join-form label {
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.room-code-join-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+.room-code-join-controls input {
+  min-width: 0;
+  min-height: 40px;
+  padding: 9px 11px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  color: #4b628f;
+  background: #f9fbfc;
+  font: inherit;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.room-code-join-controls input:focus {
+  border-color: #466fb3;
+  outline: 3px solid rgba(70, 111, 179, 0.18);
+}
+
+.room-code-join-controls button {
+  min-height: 40px;
+  padding: 9px 12px;
+}
+
+.room-code-join-form small {
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.35;
+}
+
+.room-code-join-form small.error {
+  color: #a65752;
+  font-weight: 800;
+}
+
 .meter-shell {
   height: 18px;
   border-color: var(--line);
