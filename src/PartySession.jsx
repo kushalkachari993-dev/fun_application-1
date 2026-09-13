@@ -110,9 +110,14 @@ export function SessionControls({
 
       <div className="session-actions">
         {status === 'lobby' && !isHost && (
-          <button className={currentPlayer?.ready ? 'ready-button active' : 'ready-button'} type="button" onClick={onToggleReady}>
-            <Check size={17} />
-            {currentPlayer?.ready ? 'Ready' : 'Mark ready'}
+          <button
+            className={currentPlayer?.ready ? 'ready-button active' : 'ready-button'}
+            type="button"
+            aria-pressed={Boolean(currentPlayer?.ready)}
+            onClick={onToggleReady}
+          >
+            {currentPlayer?.ready ? <X size={17} /> : <Check size={17} />}
+            {currentPlayer?.ready ? 'Cancel' : 'Mark ready'}
           </button>
         )}
         {status === 'lobby' && isHost && (

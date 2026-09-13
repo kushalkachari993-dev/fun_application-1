@@ -2611,15 +2611,15 @@ button:active {
 }
 
 .ready-button.active {
-  color: #2f6f83;
-  border-color: #b9dcd3;
-  background: #eaf7f3;
+  color: #fff;
+  border-color: #a65752;
+  background: #a65752;
 }
 
 .ready-button.active:hover {
   color: #fff;
-  border-color: #2f6f83;
-  background: #2f6f83;
+  border-color: #854541;
+  background: #854541;
 }
 
 .danger-button {
