@@ -4012,12 +4012,67 @@ button:active {
     font-size: 26px;
   }
 
+  .ludo-game {
+    gap: 12px;
+    padding: 14px;
+  }
+
+  .ludo-game .board-game-toolbar {
+    gap: 10px;
+  }
+
+  .ludo-reset-options {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    width: 100%;
+  }
+
+  .ludo-seats {
+    gap: 6px;
+  }
+
+  .ludo-seat {
+    min-height: 52px;
+    padding: 8px 10px;
+  }
+
+  .ludo-board {
+    border-width: 3px;
+    box-shadow: 0 12px 28px rgba(22, 34, 42, 0.13);
+  }
+
+  .ludo-token {
+    width: 68%;
+    height: 68%;
+    border-width: 1px;
+    font-size: clamp(7px, 2.2cqi, 10px);
+  }
+
   .ludo-controls {
-    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: 10px;
+    padding: 10px;
   }
 
   .ludo-controls > button {
-    grid-column: 1 / -1;
+    grid-column: auto;
+    width: auto;
+    min-height: 44px;
+    padding-inline: 12px;
+  }
+
+  .dice-face {
+    width: 44px;
+    height: 44px;
+    font-size: 22px;
+  }
+
+  .ludo-controls strong {
+    font-size: 14px;
+  }
+
+  .ludo-controls span {
+    font-size: 11px;
   }
 }
 
@@ -4036,6 +4091,15 @@ button:active {
 
   .room-code-card strong {
     font-size: 30px;
+  }
+
+  .ludo-controls {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .ludo-controls > button {
+    grid-column: 1 / -1;
+    width: 100%;
   }
 
   .room-expiry-row,
