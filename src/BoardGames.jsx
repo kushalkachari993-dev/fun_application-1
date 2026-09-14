@@ -1,7 +1,9 @@
-import { useState } from 'react'
+import { lazy, Suspense, useState } from 'react'
 import { Chess } from 'chess.js'
 import { Dice5, RotateCcw } from 'lucide-react'
 import { chessStatus, restoreLudo } from './roomGameEngines'
+
+const ChessBoard3D = lazy(() => import('./ChessBoard3D'))
 
 const chessPieces = {
   w: {
@@ -45,6 +47,7 @@ export function ChessGame({
   onReset,
 }) {
   const [selection, setSelection] = useState(null)
+  const [boardMode, setBoardMode] = useState('2d')
   const chess = new Chess(chessState.fen)
   const selectedSquare = selection?.fen === chessState.fen ? selection.square : null
   const currentColor = chess.turn()
@@ -62,6 +65,21 @@ export function ChessGame({
   const rows = isBlackView
     ? [...board].reverse().map((row) => [...row].reverse())
     : board
+  const squares = rows.flat().map((piece, index) => {
+    const visualRow = Math.floor(index / 8)
+    const visualColumn = index % 8
+    const rank = isBlackView ? visualRow + 1 : 8 - visualRow
+    const fileIndex = isBlackView ? 7 - visualColumn : visualColumn
+    const square = `${String.fromCharCode(97 + fileIndex)}${rank}`
+
+    return {
+      isLight: (fileIndex + rank) % 2 === 0,
+      isSelected: selectedSquare === square,
+      isTarget: legalTargets.has(square),
+      piece,
+      square,
+    }
+  })
 
   function chooseSquare(square) {
     const piece = chess.get(square)
@@ -91,10 +109,20 @@ export function ChessGame({
           <span className="mini-label">Chess duel</span>
           <h3>{chessStatus(chess)}</h3>
         </div>
-        <button className="secondary-button" type="button" disabled={!canReset} onClick={onReset}>
-          <RotateCcw size={16} />
-          Reset board
-        </button>
+        <div className="chess-toolbar-actions">
+          <div className="board-mode-toggle" role="group" aria-label="Chess board view">
+            <button className={boardMode === '2d' ? 'active' : ''} type="button" aria-pressed={boardMode === '2d'} onClick={() => setBoardMode('2d')}>
+              2D
+            </button>
+            <button className={boardMode === '3d' ? 'active' : ''} type="button" aria-pressed={boardMode === '3d'} onClick={() => setBoardMode('3d')}>
+              3D
+            </button>
+          </div>
+          <button className="secondary-button" type="button" disabled={!canReset} onClick={onReset}>
+            <RotateCcw size={16} />
+            Reset board
+          </button>
+        </div>
       </div>
 
       <div className="seat-row">
@@ -119,18 +147,9 @@ export function ChessGame({
         })}
       </div>
 
-      <div className="chess-board" aria-label="Chess board">
-        {rows.flat().map((piece, index) => {
-          const visualRow = Math.floor(index / 8)
-          const visualColumn = index % 8
-          const rank = isBlackView ? visualRow + 1 : 8 - visualRow
-          const fileIndex = isBlackView ? 7 - visualColumn : visualColumn
-          const square = `${String.fromCharCode(97 + fileIndex)}${rank}`
-          const isLight = (fileIndex + rank) % 2 === 0
-          const isSelected = selectedSquare === square
-          const isTarget = legalTargets.has(square)
-
-          return (
+      {boardMode === '2d' ? (
+        <div className="chess-board" aria-label="Chess board">
+          {squares.map(({ isLight, isSelected, isTarget, piece, square }) => (
             <button
               className={`chess-square ${isLight ? 'light' : 'dark'} ${isSelected ? 'selected' : ''} ${isTarget ? 'target' : ''}`}
               type="button"
@@ -144,9 +163,18 @@ export function ChessGame({
                 </span>
               )}
             </button>
-          )
-        })}
-      </div>
+          ))}
+        </div>
+      ) : (
+        <Suspense fallback={<div className="chess-3d-loading" role="status">Loading the 3D board…</div>}>
+          <ChessBoard3D
+            squares={squares}
+            isBlackView={isBlackView}
+            onSelectSquare={chooseSquare}
+            onUse2D={() => setBoardMode('2d')}
+          />
+        </Suspense>
+      )}
 
       <div className="game-footnote">
         <span>{!matchActive ? 'Start the match to move pieces' : canPlayTurn ? 'Your move' : `Waiting for ${playerName(players, currentSeat)}`}</span>

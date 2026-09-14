@@ -51,6 +51,7 @@ export default defineConfig({
             return 'react'
           }
           if (normalizedId.includes('/lucide-react/')) return 'icons'
+          if (normalizedId.includes('/three/')) return 'three'
 
           return 'vendor'
         },
