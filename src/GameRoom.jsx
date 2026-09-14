@@ -22,12 +22,19 @@ import {
 } from 'firebase/auth'
 import {
   ArrowRight,
+  Check,
+  ChevronDown,
+  ChevronUp,
   Copy,
+  Dice5,
   DoorOpen,
   Gamepad2,
   Laugh,
   LockKeyhole,
+  Maximize2,
   MessageCircle,
+  Minimize2,
+  Play,
   Plus,
   QrCode,
   RefreshCw,
@@ -35,6 +42,7 @@ import {
   UserRound,
   Wifi,
   WifiOff,
+  X,
   Zap,
 } from 'lucide-react'
 import { avatarPresets } from './avatars'
@@ -1070,6 +1078,9 @@ function GameRoom() {
   const [qrOpen, setQrOpen] = useState(false)
   const [qrDataUrl, setQrDataUrl] = useState('')
   const [shareStatus, setShareStatus] = useState('')
+  const [mobileRoomInfoOpen, setMobileRoomInfoOpen] = useState(false)
+  const [mobileSection, setMobileSection] = useState('game')
+  const [boardFullscreen, setBoardFullscreen] = useState(false)
   const [roomJoinOpen, setRoomJoinOpen] = useState(false)
   const [roomJoinCode, setRoomJoinCode] = useState('')
   const [roomJoinError, setRoomJoinError] = useState('')
@@ -1195,6 +1206,21 @@ function GameRoom() {
     { step: '3', label: 'Ready up', done: allReady && activePlayerEntries.length > 1 },
     { step: '4', label: 'Start match', done: session.status !== 'lobby' },
   ]
+  const currentPlayerReady = Boolean(players[currentPlayer.id]?.ready)
+  const isSoloHost = Object.keys(players).length === 1 && room.hostId === currentPlayer.id
+  const ludoTurnSeat = room.ludo?.seats?.[room.ludo?.turn] || ''
+  const canPlayLudoTurn = session.status === 'playing' && (
+    ludoTurnSeat === currentPlayer.id
+      || (!ludoTurnSeat && room.hostId === currentPlayer.id)
+      || isSoloHost
+  )
+  const chessTurn = room.chess?.fen?.split(' ')[1] || 'w'
+  const chessTurnSeat = room.chess?.seats?.[chessTurn] || ''
+  const canPlayChessTurn = session.status === 'playing' && (
+    chessTurnSeat === currentPlayer.id
+      || (!chessTurnSeat && room.hostId === currentPlayer.id)
+      || isSoloHost
+  )
 
   function logRoomEvent(event, context = {}) {
     logAnalyticsEvent(event, {
@@ -1223,6 +1249,44 @@ function GameRoom() {
     const presenceTimer = window.setInterval(() => setPresenceNow(Date.now()), 30000)
     return () => window.clearInterval(presenceTimer)
   }, [hasJoined])
+
+  useEffect(() => {
+    if (!hasJoined || typeof IntersectionObserver === 'undefined') return undefined
+
+    const sections = ['game', 'players', 'chat']
+      .map((section) => document.getElementById(`room-${section}`))
+      .filter(Boolean)
+    if (!sections.length) return undefined
+
+    const observer = new IntersectionObserver((entries) => {
+      const visibleEntry = entries
+        .filter((entry) => entry.isIntersecting)
+        .sort((first, second) => second.intersectionRatio - first.intersectionRatio)[0]
+      if (visibleEntry) setMobileSection(visibleEntry.target.id.replace('room-', ''))
+    }, {
+      rootMargin: '-116px 0px -45% 0px',
+      threshold: [0.12, 0.35, 0.6],
+    })
+
+    sections.forEach((section) => observer.observe(section))
+    return () => observer.disconnect()
+  }, [hasJoined])
+
+  useEffect(() => {
+    if (!boardFullscreen) return undefined
+
+    const previousOverflow = document.body.style.overflow
+    const closeOnEscape = (event) => {
+      if (event.key === 'Escape') setBoardFullscreen(false)
+    }
+    document.body.style.overflow = 'hidden'
+    window.addEventListener('keydown', closeOnEscape)
+
+    return () => {
+      document.body.style.overflow = previousOverflow
+      window.removeEventListener('keydown', closeOnEscape)
+    }
+  }, [boardFullscreen])
 
   useEffect(() => {
     const resetInviteState = window.setTimeout(() => {
@@ -2175,6 +2239,7 @@ function GameRoom() {
 
   function changeGame(nextGame) {
     if (session.status === 'playing') return
+    setBoardFullscreen(false)
 
     mutateRoom((currentRoom) => {
       const patch = {
@@ -2778,10 +2843,115 @@ function GameRoom() {
     )
   }
 
+  function scrollToRoomSection(section) {
+    setMobileSection(section)
+    document.getElementById(`room-${section}`)?.scrollIntoView({
+      behavior: 'smooth',
+      block: 'start',
+    })
+  }
+
+  let mobileAction = {
+    eyebrow: 'Party lobby',
+    detail: `${readyLabel} ready`,
+    label: canControlRoom ? 'Start match' : currentPlayerReady ? 'Cancel' : 'Mark ready',
+    icon: canControlRoom ? Play : currentPlayerReady ? X : Check,
+    disabled: canControlRoom && !allReady,
+    danger: !canControlRoom && currentPlayerReady,
+  }
+
+  if (session.status === 'playing' && game === 'Ludo' && room.ludo) {
+    const shouldRoll = canPlayLudoTurn && room.ludo.gameState === 'playerHasToRollADice'
+    const shouldChooseToken = canPlayLudoTurn && room.ludo.gameState === 'playerHasToSelectAPosition'
+    mobileAction = {
+      eyebrow: shouldRoll || shouldChooseToken ? 'Your turn' : `${room.ludo.turn} turn`,
+      detail: shouldChooseToken
+        ? 'Choose a glowing token'
+        : shouldRoll ? 'Roll to make your move' : `Waiting for ${players[ludoTurnSeat]?.name || room.ludo.turn}`,
+      label: shouldRoll ? 'Roll dice' : shouldChooseToken ? 'Choose token' : 'View board',
+      icon: shouldRoll ? Dice5 : Gamepad2,
+      disabled: false,
+      danger: false,
+    }
+  } else if (session.status === 'playing' && game === 'Chess' && room.chess) {
+    mobileAction = {
+      eyebrow: canPlayChessTurn ? 'Your turn' : `${chessTurn === 'w' ? 'White' : 'Black'} to move`,
+      detail: canPlayChessTurn ? 'Select a piece to move' : `Waiting for ${players[chessTurnSeat]?.name || 'a player'}`,
+      label: canPlayChessTurn ? 'Your move' : 'View board',
+      icon: Gamepad2,
+      disabled: false,
+      danger: false,
+    }
+  } else if (session.status === 'playing') {
+    mobileAction = {
+      eyebrow: `${game} · Round ${round}`,
+      detail: canControlRoom ? 'Keep the party moving' : 'The host controls rounds',
+      label: canControlRoom ? 'Next round' : 'View game',
+      icon: canControlRoom ? ArrowRight : Gamepad2,
+      disabled: false,
+      danger: false,
+    }
+  } else if (session.status === 'finished') {
+    mobileAction = {
+      eyebrow: 'Match finished',
+      detail: winnerNames.length ? `${winnerNames.join(', ')} won` : 'See the final scores',
+      label: canControlRoom ? 'Prepare rematch' : 'View results',
+      icon: canControlRoom ? RefreshCw : Gamepad2,
+      disabled: false,
+      danger: false,
+    }
+  }
+
+  function handleMobileAction() {
+    if (session.status === 'lobby') {
+      if (canControlRoom) startMatch()
+      else toggleReady()
+      return
+    }
+
+    if (session.status === 'finished') {
+      if (canControlRoom) prepareRematch()
+      else scrollToRoomSection('players')
+      return
+    }
+
+    if (game === 'Ludo' && canPlayLudoTurn && room.ludo?.gameState === 'playerHasToRollADice') {
+      rollLudoDice()
+      return
+    }
+
+    if (promptRoomGames.includes(game) && canControlRoom) {
+      nextRound()
+      return
+    }
+
+    scrollToRoomSection('game')
+  }
+
+  const MobileActionIcon = mobileAction.icon
+
   return (
     <ToolPage>
       <section className="game-room">
-        <div className="room-hero">
+        <button
+          className="mobile-room-info-toggle"
+          type="button"
+          aria-expanded={mobileRoomInfoOpen}
+          aria-controls="room-info-details"
+          onClick={() => setMobileRoomInfoOpen((open) => !open)}
+        >
+          <span>
+            <small>Room details</small>
+            <strong>{roomCode} · {livePlayerLabel} · {modeLabel}</strong>
+          </span>
+          {mobileRoomInfoOpen ? <ChevronUp size={19} /> : <ChevronDown size={19} />}
+        </button>
+
+        <div
+          id="room-info-details"
+          className={`room-info-details ${mobileRoomInfoOpen ? 'open' : ''}`}
+        >
+          <div className="room-hero">
           <div>
             <span className="mini-label">Common room</span>
             <h2>The Party Board</h2>
@@ -2901,7 +3071,34 @@ function GameRoom() {
               </div>
             )}
           </div>
+          </div>
+
+          <div className="room-overview-strip" aria-label="Room status">
+            <div className="room-overview-item">
+              <span>Host</span>
+              <strong>{hostLabel}</strong>
+            </div>
+            <div className="room-overview-item">
+              <span>Players</span>
+              <strong>{livePlayerLabel}</strong>
+            </div>
+            <div className="room-overview-item">
+              <span>Ready</span>
+              <strong>{readyLabel}</strong>
+            </div>
+            <div className="room-overview-item">
+              <span>Access</span>
+              <strong>{accessLabel}</strong>
+            </div>
+            <div className="room-overview-item accent">
+              <span>Game</span>
+              <strong>{modeLabel}</strong>
+            </div>
+          </div>
+
+          <RoomStartChecklist items={roomGuideItems} />
         </div>
+
         {exitPromptOpen && (
           <RoomExitSheet
             exitMessage={exitMessage}
@@ -2917,44 +3114,34 @@ function GameRoom() {
         )}
 
         <nav className="mobile-room-nav" aria-label="Room sections">
-          <a href="#room-game">
+          <a
+            className={mobileSection === 'game' ? 'active' : ''}
+            href="#room-game"
+            aria-current={mobileSection === 'game' ? 'page' : undefined}
+            onClick={() => setMobileSection('game')}
+          >
             <Gamepad2 size={15} />
             Game
           </a>
-          <a href="#room-players">
+          <a
+            className={mobileSection === 'players' ? 'active' : ''}
+            href="#room-players"
+            aria-current={mobileSection === 'players' ? 'page' : undefined}
+            onClick={() => setMobileSection('players')}
+          >
             <UserRound size={15} />
             Players
           </a>
-          <a href="#room-chat">
+          <a
+            className={mobileSection === 'chat' ? 'active' : ''}
+            href="#room-chat"
+            aria-current={mobileSection === 'chat' ? 'page' : undefined}
+            onClick={() => setMobileSection('chat')}
+          >
             <MessageCircle size={15} />
             Chat
           </a>
         </nav>
-
-        <div className="room-overview-strip" aria-label="Room status">
-          <div className="room-overview-item">
-            <span>Host</span>
-            <strong>{hostLabel}</strong>
-          </div>
-          <div className="room-overview-item">
-            <span>Players</span>
-            <strong>{livePlayerLabel}</strong>
-          </div>
-          <div className="room-overview-item">
-            <span>Ready</span>
-            <strong>{readyLabel}</strong>
-          </div>
-          <div className="room-overview-item">
-            <span>Access</span>
-            <strong>{accessLabel}</strong>
-          </div>
-          <div className="room-overview-item accent">
-            <span>Game</span>
-            <strong>{modeLabel}</strong>
-          </div>
-        </div>
-
-        <RoomStartChecklist items={roomGuideItems} />
 
         <SessionControls
           allReady={allReady}
@@ -2989,7 +3176,19 @@ function GameRoom() {
             onTransferHost={transferHost}
           />
 
-          <section className="round-board" id="room-game">
+          <section className={`round-board ${boardFullscreen ? 'board-fullscreen' : ''}`} id="room-game">
+            {(game === 'Chess' || game === 'Ludo') && (
+              <div className="mobile-board-tools">
+                <button
+                  type="button"
+                  aria-pressed={boardFullscreen}
+                  onClick={() => setBoardFullscreen((open) => !open)}
+                >
+                  {boardFullscreen ? <Minimize2 size={17} /> : <Maximize2 size={17} />}
+                  {boardFullscreen ? 'Exit full screen' : 'Full-screen board'}
+                </button>
+              </div>
+            )}
             <div className="room-tabs" aria-label="Game room games">
               {roomGames.map((option) => (
                 <button
@@ -3067,6 +3266,26 @@ function GameRoom() {
             players={players}
             onSendMessage={sendChatMessage}
           />
+        </div>
+
+        <div
+          className={`mobile-game-action ${boardFullscreen ? 'board-open' : ''}`}
+          role="region"
+          aria-label="Current game action"
+        >
+          <div>
+            <small>{mobileAction.eyebrow}</small>
+            <strong>{mobileAction.detail}</strong>
+          </div>
+          <button
+            className={mobileAction.danger ? 'danger' : ''}
+            type="button"
+            disabled={mobileAction.disabled}
+            onClick={handleMobileAction}
+          >
+            <MobileActionIcon size={17} />
+            {mobileAction.label}
+          </button>
         </div>
       </section>
     </ToolPage>
