@@ -1,9 +1,10 @@
 import { lazy, Suspense, useState } from 'react'
 import { Chess } from 'chess.js'
 import { Dice5, RotateCcw } from 'lucide-react'
+import { loadChessBoard3D } from './loadChessBoard3D'
 import { chessStatus, restoreLudo } from './roomGameEngines'
 
-const ChessBoard3D = lazy(() => import('./ChessBoard3D'))
+const ChessBoard3D = lazy(loadChessBoard3D)
 
 const chessPieces = {
   w: {
@@ -33,6 +34,40 @@ const ludoHomePositions = {
 
 function playerName(players, playerId) {
   return players[playerId]?.name || 'Open seat'
+}
+
+function ChessBoard2D({ squares, onSelectSquare }) {
+  return (
+    <div className="chess-board" aria-label="Chess board">
+      {squares.map(({ isLight, isSelected, isTarget, piece, square }) => (
+        <button
+          className={`chess-square ${isLight ? 'light' : 'dark'} ${isSelected ? 'selected' : ''} ${isTarget ? 'target' : ''}`}
+          type="button"
+          key={square}
+          onClick={() => onSelectSquare(square)}
+          aria-label={`${square}${piece ? ` ${piece.color === 'w' ? 'white' : 'black'} ${piece.type}` : ''}`}
+        >
+          {piece && (
+            <span className={`chess-piece ${piece.color}`}>
+              {chessPieces[piece.color][piece.type]}
+            </span>
+          )}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+function ChessBoard3DLoading({ squares, onSelectSquare }) {
+  return (
+    <div className="chess-3d-loading">
+      <div className="chess-3d-loading-status" role="status">
+        <span className="chess-3d-loading-dot" aria-hidden="true" />
+        Loading the 3D board… You can keep playing in 2D while it downloads.
+      </div>
+      <ChessBoard2D squares={squares} onSelectSquare={onSelectSquare} />
+    </div>
+  )
 }
 
 export function ChessGame({
@@ -148,25 +183,9 @@ export function ChessGame({
       </div>
 
       {boardMode === '2d' ? (
-        <div className="chess-board" aria-label="Chess board">
-          {squares.map(({ isLight, isSelected, isTarget, piece, square }) => (
-            <button
-              className={`chess-square ${isLight ? 'light' : 'dark'} ${isSelected ? 'selected' : ''} ${isTarget ? 'target' : ''}`}
-              type="button"
-              key={square}
-              onClick={() => chooseSquare(square)}
-              aria-label={`${square}${piece ? ` ${piece.color === 'w' ? 'white' : 'black'} ${piece.type}` : ''}`}
-            >
-              {piece && (
-                <span className={`chess-piece ${piece.color}`}>
-                  {chessPieces[piece.color][piece.type]}
-                </span>
-              )}
-            </button>
-          ))}
-        </div>
+        <ChessBoard2D squares={squares} onSelectSquare={chooseSquare} />
       ) : (
-        <Suspense fallback={<div className="chess-3d-loading" role="status">Loading the 3D board…</div>}>
+        <Suspense fallback={<ChessBoard3DLoading squares={squares} onSelectSquare={chooseSquare} />}>
           <ChessBoard3D
             squares={squares}
             isBlackView={isBlackView}
