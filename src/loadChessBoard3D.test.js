@@ -47,4 +47,25 @@ describe('3D chess board loading', () => {
     await loadChessBoard3D()
     expect(chessBoard3DModuleLoaded).toHaveBeenCalledOnce()
   })
+
+  it('keeps the 2D board available with retry and fallback actions after a load failure', async () => {
+    const { ChessBoard3DErrorFallback } = await import('./BoardGames')
+    const markup = renderToStaticMarkup(createElement(ChessBoard3DErrorFallback, {
+      squares: [{
+        isLight: true,
+        isSelected: false,
+        isTarget: false,
+        piece: null,
+        square: 'a1',
+      }],
+      onRetry: vi.fn(),
+      onSelectSquare: vi.fn(),
+      onUse2D: vi.fn(),
+    }))
+
+    expect(markup).toContain('role="alert"')
+    expect(markup).toContain('Retry 3D')
+    expect(markup).toContain('Use 2D board')
+    expect(markup).toContain('aria-label="Chess board"')
+  })
 })

@@ -1,10 +1,11 @@
-import { lazy, Suspense, useState } from 'react'
+import { Component, lazy, Suspense, useEffect, useState } from 'react'
 import { Chess } from 'chess.js'
 import { Dice5, RotateCcw } from 'lucide-react'
 import { loadChessBoard3D } from './loadChessBoard3D'
 import { chessStatus, restoreLudo } from './roomGameEngines'
 
 const ChessBoard3D = lazy(loadChessBoard3D)
+const chessBoard3DRetryStorageKey = 'just-for-fun:retry-chess-3d'
 
 const chessPieces = {
   w: {
@@ -70,6 +71,64 @@ function ChessBoard3DLoading({ squares, onSelectSquare }) {
   )
 }
 
+export function ChessBoard3DErrorFallback({ onRetry, onSelectSquare, onUse2D, squares }) {
+  const [online, setOnline] = useState(() => (
+    typeof navigator === 'undefined' ? true : navigator.onLine
+  ))
+
+  useEffect(() => {
+    const markOnline = () => setOnline(true)
+    const markOffline = () => setOnline(false)
+    window.addEventListener('online', markOnline)
+    window.addEventListener('offline', markOffline)
+
+    return () => {
+      window.removeEventListener('online', markOnline)
+      window.removeEventListener('offline', markOffline)
+    }
+  }, [])
+
+  return (
+    <div className="chess-3d-loading chess-3d-load-error">
+      <div className="chess-3d-loading-status" role="alert">
+        <div>
+          <strong>The 3D board couldn’t start.</strong>
+          <span>{online ? 'Retry the download, or keep playing in 2D.' : 'Reconnect to retry, or keep playing in 2D.'}</span>
+        </div>
+        <div className="chess-3d-load-actions">
+          <button type="button" disabled={!online} onClick={onRetry}>Retry 3D</button>
+          <button className="secondary-button" type="button" onClick={onUse2D}>Use 2D board</button>
+        </div>
+      </div>
+      <ChessBoard2D squares={squares} onSelectSquare={onSelectSquare} />
+    </div>
+  )
+}
+
+class ChessBoard3DErrorBoundary extends Component {
+  state = { failed: false }
+
+  static getDerivedStateFromError() {
+    return { failed: true }
+  }
+
+  render() {
+    return this.state.failed ? this.props.fallback : this.props.children
+  }
+}
+
+function initialChessBoardMode() {
+  if (typeof window === 'undefined') return '2d'
+
+  try {
+    const retry3D = window.sessionStorage.getItem(chessBoard3DRetryStorageKey) === 'true'
+    window.sessionStorage.removeItem(chessBoard3DRetryStorageKey)
+    return retry3D ? '3d' : '2d'
+  } catch {
+    return '2d'
+  }
+}
+
 export function ChessGame({
   chessState,
   currentPlayerId,
@@ -82,7 +141,7 @@ export function ChessGame({
   onReset,
 }) {
   const [selection, setSelection] = useState(null)
-  const [boardMode, setBoardMode] = useState('2d')
+  const [boardMode, setBoardMode] = useState(initialChessBoardMode)
   const chess = new Chess(chessState.fen)
   const selectedSquare = selection?.fen === chessState.fen ? selection.square : null
   const currentColor = chess.turn()
@@ -137,6 +196,19 @@ export function ChessGame({
     setSelection(null)
   }
 
+  function use2DBoard() {
+    setBoardMode('2d')
+  }
+
+  function retry3DBoard() {
+    try {
+      window.sessionStorage.setItem(chessBoard3DRetryStorageKey, 'true')
+    } catch {
+      // Reloading still clears the browser's failed module cache.
+    }
+    window.location.reload()
+  }
+
   return (
     <div className="board-game chess-game">
       <div className="board-game-toolbar">
@@ -146,7 +218,7 @@ export function ChessGame({
         </div>
         <div className="chess-toolbar-actions">
           <div className="board-mode-toggle" role="group" aria-label="Chess board view">
-            <button className={boardMode === '2d' ? 'active' : ''} type="button" aria-pressed={boardMode === '2d'} onClick={() => setBoardMode('2d')}>
+            <button className={boardMode === '2d' ? 'active' : ''} type="button" aria-pressed={boardMode === '2d'} onClick={use2DBoard}>
               2D
             </button>
             <button className={boardMode === '3d' ? 'active' : ''} type="button" aria-pressed={boardMode === '3d'} onClick={() => setBoardMode('3d')}>
@@ -185,14 +257,25 @@ export function ChessGame({
       {boardMode === '2d' ? (
         <ChessBoard2D squares={squares} onSelectSquare={chooseSquare} />
       ) : (
-        <Suspense fallback={<ChessBoard3DLoading squares={squares} onSelectSquare={chooseSquare} />}>
-          <ChessBoard3D
-            squares={squares}
-            isBlackView={isBlackView}
-            onSelectSquare={chooseSquare}
-            onUse2D={() => setBoardMode('2d')}
-          />
-        </Suspense>
+        <ChessBoard3DErrorBoundary
+          fallback={(
+            <ChessBoard3DErrorFallback
+              squares={squares}
+              onRetry={retry3DBoard}
+              onSelectSquare={chooseSquare}
+              onUse2D={use2DBoard}
+            />
+          )}
+        >
+          <Suspense fallback={<ChessBoard3DLoading squares={squares} onSelectSquare={chooseSquare} />}>
+            <ChessBoard3D
+              squares={squares}
+              isBlackView={isBlackView}
+              onSelectSquare={chooseSquare}
+              onUse2D={use2DBoard}
+            />
+          </Suspense>
+        </ChessBoard3DErrorBoundary>
       )}
 
       <div className="game-footnote">

@@ -1698,6 +1698,39 @@ button:hover {
   text-align: center;
 }
 
+.chess-3d-load-error .chess-3d-loading-status {
+  flex-wrap: wrap;
+  justify-content: space-between;
+  border-color: rgba(167, 70, 92, 0.24);
+  background: #fff4f6;
+  text-align: left;
+}
+
+.chess-3d-load-error .chess-3d-loading-status > div:first-child {
+  display: grid;
+  gap: 3px;
+}
+
+.chess-3d-load-error .chess-3d-loading-status strong {
+  color: var(--ink);
+}
+
+.chess-3d-load-error .chess-3d-loading-status span {
+  font-weight: 700;
+}
+
+.chess-3d-load-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+
+.chess-3d-load-actions button {
+  min-height: 36px;
+  padding: 7px 12px;
+}
+
 .chess-3d-loading-dot {
   width: 9px;
   height: 9px;
