@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "api:check": "node --check api/generate-relationship-tool.js",
+    "api:check": "node --check api/generate-relationship-tool.js && node --check api/firebase-id-token.js && node --check api/livekit-token.js",
     "lint": "eslint .",
     "test": "vitest run",
     "preview": "vite preview"
@@ -15,6 +15,8 @@
     "@ayshrj/ludo.js": "^1.0.10",
     "chess.js": "^1.4.0",
     "firebase": "^12.15.0",
+    "livekit-client": "^2.22.3",
+    "livekit-server-sdk": "^2.19.0",
     "lucide-react": "^1.21.0",
     "qrcode": "^1.5.4",
     "react": "^19.2.6",

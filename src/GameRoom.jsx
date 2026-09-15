@@ -73,6 +73,7 @@ import {
   removePlayerFromScores,
   removePlayerFromSeats,
 } from './roomState'
+import VoiceChannel from './VoiceChannel'
 const truthPrompts = [
   'What is the funniest thing you have searched online recently?',
   'Who in this group has the most dramatic reaction to small problems?',
@@ -3155,6 +3156,12 @@ function GameRoom() {
           onRematch={prepareRematch}
           onStart={startMatch}
           onToggleReady={toggleReady}
+        />
+
+        <VoiceChannel
+          authUser={authUser}
+          currentPlayer={currentPlayer}
+          roomCode={roomCode}
         />
 
         <div className="room-layout">

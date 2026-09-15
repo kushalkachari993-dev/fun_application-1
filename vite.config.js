@@ -44,6 +44,12 @@ export default defineConfig({
             return 'games'
           }
           if (
+            normalizedId.includes('/livekit-client/')
+            || normalizedId.includes('/@livekit/')
+          ) {
+            return 'livekit'
+          }
+          if (
             normalizedId.includes('/react/')
             || normalizedId.includes('/react-dom/')
             || normalizedId.includes('/react-router-dom/')

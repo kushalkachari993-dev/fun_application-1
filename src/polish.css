@@ -4121,6 +4121,248 @@ button:active {
   }
 }
 
+/* LiveKit room voice */
+.voice-channel {
+  display: grid;
+  grid-template-columns: auto minmax(160px, 1fr) auto;
+  align-items: center;
+  gap: 10px 16px;
+  margin-top: 12px;
+  padding: 12px 14px;
+  border: 1px solid #d6e3e7;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #f8fbfc, #f2f8f7);
+  box-shadow: 0 8px 24px rgba(22, 34, 42, 0.045);
+}
+
+.voice-channel.connected {
+  border-color: #bddbd3;
+  background: linear-gradient(135deg, #f5fbf9, #edf7f4);
+}
+
+.voice-channel-heading {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+}
+
+.voice-channel-icon {
+  display: inline-grid;
+  width: 38px;
+  height: 38px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 9px;
+  color: #2f6f83;
+  background: #e4f1f3;
+}
+
+.voice-channel.connected .voice-channel-icon {
+  color: #2e7b62;
+  background: #ddf0e9;
+}
+
+.voice-channel-heading > div {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.voice-channel-heading strong {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.voice-participants {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.voice-participant {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px 4px 4px;
+  border: 1px solid #d4e2e4;
+  border-radius: 999px;
+  color: #40515b;
+  background: rgba(255, 255, 255, 0.8);
+  font-size: 10px;
+  font-weight: 850;
+}
+
+.voice-participant > span:nth-child(2) {
+  overflow: hidden;
+  max-width: 94px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.voice-participant.speaking {
+  border-color: #53a783;
+  color: #23664f;
+  box-shadow: 0 0 0 3px rgba(83, 167, 131, 0.13);
+}
+
+.voice-participant.muted {
+  color: #7d898f;
+  background: #f3f5f6;
+}
+
+.voice-avatar {
+  display: inline-grid;
+  width: 24px;
+  height: 24px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 50%;
+  color: #fff;
+  background: #3f7f97;
+  font-size: 10px;
+  font-weight: 950;
+}
+
+.voice-participant.speaking .voice-avatar {
+  background: #3b916f;
+}
+
+.voice-channel-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 7px;
+}
+
+.voice-channel-actions button {
+  min-height: 38px;
+  padding: 7px 10px;
+  font-size: 11px;
+}
+
+.voice-channel-actions .voice-mute.muted {
+  border-color: #dfc18d;
+  color: #79551f;
+  background: #fff7e7;
+}
+
+.voice-channel-actions .voice-leave {
+  border-color: #a65752;
+  color: #fff;
+  background: #a65752;
+}
+
+.voice-channel-actions .voice-leave:hover {
+  border-color: #854541;
+  background: #854541;
+}
+
+.voice-channel-error,
+.voice-channel-note {
+  grid-column: 1 / -1;
+  margin: 0;
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.voice-channel-error {
+  padding: 8px 10px;
+  border: 1px solid #efc6c3;
+  border-radius: 7px;
+  color: #8d4541;
+  background: #fff4f3;
+  font-weight: 750;
+}
+
+.voice-channel-note {
+  color: var(--muted);
+}
+
+.voice-audio-output {
+  position: fixed;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.voice-channel .spin {
+  animation: voice-spin 900ms linear infinite;
+}
+
+@keyframes voice-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 1120px) {
+  .voice-channel {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .voice-participants {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+}
+
+@media (max-width: 640px) {
+  .voice-channel {
+    gap: 10px;
+    padding: 11px;
+  }
+
+  .voice-channel-actions button {
+    min-width: 42px;
+    min-height: 42px;
+  }
+
+  .voice-participants {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding: 2px 1px 4px;
+    scrollbar-width: thin;
+  }
+
+  .voice-participant {
+    flex: 0 0 auto;
+  }
+}
+
+@media (max-width: 420px) {
+  .voice-channel {
+    grid-template-columns: 1fr;
+  }
+
+  .voice-channel-actions {
+    grid-row: auto;
+    justify-content: stretch;
+  }
+
+  .voice-channel-actions button {
+    flex: 1 1 auto;
+  }
+
+  .voice-participants {
+    grid-column: 1;
+    grid-row: auto;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .voice-channel .spin {
+    animation: none;
+  }
+}
+
 /* Mobile room command surface */
 .mobile-room-info-toggle,
 .mobile-board-tools,
