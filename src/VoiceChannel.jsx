@@ -145,13 +145,17 @@ export default function VoiceChannel({ authUser, currentPlayer, roomCode }) {
       await livekitRoom.connect(payload.serverUrl, payload.participantToken)
       await livekitRoom.startAudio().catch(() => setNeedsAudioStart(true))
 
+      // The room is already usable for listening while the browser waits for a
+      // microphone permission decision. Keep Leave available during that prompt.
+      setConnectionState('connected')
+      refreshParticipants(livekitRoom)
+
       try {
         await livekitRoom.localParticipant.setMicrophoneEnabled(true)
       } catch (microphoneError) {
         setError(formatVoiceError(microphoneError))
       }
 
-      setConnectionState('connected')
       refreshParticipants(livekitRoom)
     } catch (joinError) {
       const livekitRoom = roomRef.current
