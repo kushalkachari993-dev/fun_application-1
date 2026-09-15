@@ -61,6 +61,18 @@ import {
   restoreLudo,
   serializeLudo,
 } from './roomGameEngines'
+import SecretVoteGame from './SecretVoteGame'
+import {
+  createSecretVoteLobby,
+  createSecretVoteRound,
+  finishSecretVoteRound,
+  nextSecretVotePrompt,
+  normalizeSecretVote,
+  revealSecretAnswers,
+  SECRET_VOTE_GAME,
+  submitSecretAnswer,
+  submitSecretVote,
+} from './secretVote'
 import {
   createInitialSession,
   createRoomMaintenancePatch,
@@ -106,8 +118,8 @@ const wouldYouRatherPrompts = [
   ['Never eat fries again', 'Never drink cold coffee again'],
 ]
 
-const roomGames = ['Truth or Dare', "Who's Most Likely To", 'Would You Rather', 'Chess', 'Ludo']
-const promptRoomGames = roomGames.slice(0, 3)
+const promptRoomGames = ['Truth or Dare', "Who's Most Likely To", 'Would You Rather']
+const roomGames = [...promptRoomGames, SECRET_VOTE_GAME, 'Chess', 'Ludo']
 const playerStorageKey = 'just-for-fun-player'
 const chatMessageLimit = 60
 const matchHistoryLimit = 12
@@ -115,7 +127,7 @@ const kickLimit = 3
 const roomLifetimeMs = 24 * 60 * 60 * 1000
 const roomSchemaVersion = 2
 const gameStateDocId = 'current'
-const gameStateKeys = ['game', 'prompt', 'round', 'reactions', 'session', 'chess', 'ludo']
+const gameStateKeys = ['game', 'prompt', 'round', 'reactions', 'session', 'secretVote', 'chess', 'ludo']
 const roomMetadataKeys = ['roomCode', 'hostId', 'expiresAt', 'resetAt', 'kickedPlayers', 'locked']
 const roomExitReasons = [
   ['done_playing', 'Done playing'],
@@ -310,6 +322,7 @@ function createInitialRoom(roomCode, player = null, now = Date.now()) {
     prompt: promptForGame(game, ''),
     round: 1,
     reactions: { laughs: 0, chaos: 0, skip: 0 },
+    secretVote: null,
     session: createInitialSession(),
     messages: [],
     history: [],
@@ -584,6 +597,7 @@ function createInitialGameState(room) {
 
   if (room.chess) state.chess = room.chess
   if (room.ludo) state.ludo = room.ludo
+  if (room.secretVote !== undefined) state.secretVote = room.secretVote
 
   return state
 }
@@ -687,6 +701,7 @@ function normalizeRoom(data, roomCode) {
       ...fallback.reactions,
       ...data?.reactions,
     },
+    secretVote: normalizeSecretVote(data?.secretVote),
     session: {
       ...fallback.session,
       ...data?.session,
@@ -913,11 +928,25 @@ function promptForGame(game, currentPrompt) {
     const next = randomItem(wouldYouRatherPrompts, currentPrompt)
     return `${next[0]} or ${next[1]}?`
   }
+  if (game === SECRET_VOTE_GAME) return nextSecretVotePrompt(currentPrompt)
   if (!promptRoomGames.includes(game)) return currentPrompt
   return randomItem([...truthPrompts, ...darePrompts], currentPrompt)
 }
 
 function freshGamePatch(room) {
+  if (room.game === SECRET_VOTE_GAME) {
+    const secretVote = createSecretVoteRound(
+      room.secretVote?.prompt || room.prompt,
+      1,
+    )
+    return {
+      prompt: secretVote.prompt,
+      round: 1,
+      reactions: { laughs: 0, chaos: 0, skip: 0 },
+      secretVote,
+    }
+  }
+
   if (room.game === 'Chess') {
     return {
       chess: createChessState(room.players, room.hostId),
@@ -2243,11 +2272,15 @@ function GameRoom() {
     setBoardFullscreen(false)
 
     mutateRoom((currentRoom) => {
+      const nextPrompt = promptForGame(nextGame, currentRoom.prompt)
       const patch = {
         game: nextGame,
-        prompt: promptForGame(nextGame, currentRoom.prompt),
+        prompt: nextPrompt,
         round: 1,
         reactions: { laughs: 0, chaos: 0, skip: 0 },
+        secretVote: nextGame === SECRET_VOTE_GAME
+          ? { ...createSecretVoteLobby(), prompt: nextPrompt }
+          : null,
         session: createInitialSession(),
         playerPatches: Object.fromEntries(
           Object.keys(currentRoom.players).map((playerId) => [playerId, { ready: false }]),
@@ -2280,6 +2313,99 @@ function GameRoom() {
       round: currentRoom.round + 1,
       reactions: { laughs: 0, chaos: 0, skip: 0 },
     }), { hostOnly: true })
+  }
+
+  function submitSecretAnswerForRoom(answer) {
+    const submittedAt = currentTimestamp()
+    mutateRoom((currentRoom) => {
+      const secretVote = normalizeSecretVote(currentRoom.secretVote)
+      if (
+        currentRoom.game !== SECRET_VOTE_GAME
+        || currentRoom.session.status !== 'playing'
+        || secretVote?.phase !== 'answering'
+        || secretVote.deadlineAt < submittedAt
+      ) return {}
+
+      return {
+        secretVote: submitSecretAnswer(secretVote, currentPlayer.id, answer),
+      }
+    }, { transactional: true })
+  }
+
+  function voteForSecretAnswer(answerPlayerId) {
+    const votedAt = currentTimestamp()
+    mutateRoom((currentRoom) => {
+      const secretVote = normalizeSecretVote(currentRoom.secretVote)
+      if (
+        currentRoom.game !== SECRET_VOTE_GAME
+        || currentRoom.session.status !== 'playing'
+        || secretVote?.phase !== 'voting'
+        || secretVote.deadlineAt < votedAt
+      ) return {}
+
+      return {
+        secretVote: submitSecretVote(
+          secretVote,
+          currentPlayer.id,
+          answerPlayerId,
+        ),
+      }
+    }, { transactional: true })
+  }
+
+  function advanceSecretVote() {
+    const advancedAt = currentTimestamp()
+    mutateRoom((currentRoom) => {
+      if (
+        currentRoom.game !== SECRET_VOTE_GAME
+        || currentRoom.session.status !== 'playing'
+      ) return {}
+
+      const secretVote = normalizeSecretVote(currentRoom.secretVote)
+      if (!secretVote) return {}
+      const activePlayerIds = Object.entries(currentRoom.players)
+        .filter(([, player]) => isPlayerActive(player, advancedAt))
+        .map(([playerId]) => playerId)
+
+      if (secretVote.phase === 'answering') {
+        return {
+          secretVote: revealSecretAnswers(secretVote, activePlayerIds, advancedAt),
+        }
+      }
+
+      if (secretVote.phase === 'voting') {
+        const result = finishSecretVoteRound(
+          secretVote,
+          currentRoom.session.scores,
+          activePlayerIds,
+        )
+        return {
+          secretVote: result.secretVote,
+          session: {
+            ...currentRoom.session,
+            scores: result.scores,
+          },
+          messageCreates: result.winnerIds.length
+            ? [systemMessage(`${result.winnerIds.map((playerId) => currentRoom.players[playerId]?.name || 'Player').join(' & ')} won Secret Vote round ${secretVote.round}.`)]
+            : [],
+        }
+      }
+
+      if (secretVote.phase === 'results') {
+        const nextSecretVote = createSecretVoteRound(
+          secretVote.prompt,
+          secretVote.round + 1,
+          advancedAt,
+        )
+        return {
+          prompt: nextSecretVote.prompt,
+          round: nextSecretVote.round,
+          secretVote: nextSecretVote,
+        }
+      }
+
+      return {}
+    }, { hostOnly: true, transactional: true })
   }
 
   function addReaction(reaction) {
@@ -2883,6 +3009,20 @@ function GameRoom() {
       disabled: false,
       danger: false,
     }
+  } else if (session.status === 'playing' && game === SECRET_VOTE_GAME) {
+    const secretPhase = room.secretVote?.phase || 'answering'
+    mobileAction = {
+      eyebrow: `Secret Vote · Round ${room.secretVote?.round || round}`,
+      detail: secretPhase === 'answering'
+        ? room.secretVote?.submissions?.[currentPlayer.id] ? 'Your answer is locked' : 'Write your secret answer'
+        : secretPhase === 'voting'
+          ? room.secretVote?.votes?.[currentPlayer.id] ? 'Your vote is locked' : 'Choose the funniest answer'
+          : 'See who wrote each answer',
+      label: secretPhase === 'answering' ? 'Answer now' : secretPhase === 'voting' ? 'Vote now' : 'View results',
+      icon: secretPhase === 'voting' ? Check : MessageCircle,
+      disabled: false,
+      danger: false,
+    }
   } else if (session.status === 'playing') {
     mobileAction = {
       eyebrow: `${game} · Round ${round}`,
@@ -3234,6 +3374,20 @@ function GameRoom() {
                 onMoveToken={moveLudoToken}
                 onReset={resetLudo}
                 onRoll={rollLudoDice}
+              />
+            )}
+            {game === SECRET_VOTE_GAME && (
+              <SecretVoteGame
+                key={`${session.matchId || 'lobby'}-${room.secretVote?.round || 0}`}
+                currentPlayerId={currentPlayer.id}
+                isHost={canControlRoom}
+                matchActive={session.status === 'playing'}
+                players={players}
+                scores={session.scores}
+                state={room.secretVote || { phase: 'lobby', prompt, round }}
+                onAdvance={advanceSecretVote}
+                onSubmitAnswer={submitSecretAnswerForRoom}
+                onVote={voteForSecretAnswer}
               />
             )}
             {promptRoomGames.includes(game) && (

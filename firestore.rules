@@ -280,6 +280,7 @@ service cloud.firestore {
             isMemberAfter(roomId)
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
               'reactions',
+              'secretVote',
               'chess',
               'ludo',
               'expireAt',

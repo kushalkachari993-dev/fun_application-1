@@ -338,7 +338,7 @@ const pages = [
   {
     path: '/game-room',
     title: 'Game Room',
-    description: 'Create a live party room with chat, scores, Chess, and Ludo.',
+    description: 'Create a live party room with chat, voice, Secret Vote, Chess, and Ludo.',
     accent: 'room',
     icon: Gamepad2,
   },
@@ -739,7 +739,7 @@ function Layout() {
             <h1>{isHome ? 'One room for your favorite people' : currentPageTitle(location.pathname)}</h1>
             <p>
               {isHome
-                ? 'Create a live room for chat, scores, Chess, and Ludo—or grab a quick tool when you just need the right idea.'
+                ? 'Create a live room for chat, voice, Secret Vote, Chess, and Ludo—or grab a quick tool when you just need the right idea.'
                 : currentPageDescription(location.pathname)}
             </p>
             {isHome && (
