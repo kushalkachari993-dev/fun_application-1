@@ -11,6 +11,13 @@ npm.cmd run dev
 
 Every push and pull request runs `npm ci`, `npm run lint`, `npm run test`, `npm run api:check`, and `npm run build` through GitHub Actions.
 
+To verify that optional Three.js and LiveKit code remains lazy-loaded and the initial JavaScript stays within its 325 KiB budget, build first and then run:
+
+```bash
+npm.cmd run build
+npm.cmd run verify:bundles
+```
+
 ## Groq AI Tools on Vercel
 
 The Apology, Compliment, and Date Plan tools can generate custom ideas with Groq through a Vercel Serverless Function at `/api/generate-relationship-tool`. The React app never stores the Groq API key.

@@ -9,6 +9,7 @@
     "api:check": "node --check api/generate-relationship-tool.js && node --check api/firebase-id-token.js && node --check api/livekit-token.js",
     "lint": "eslint .",
     "test": "vitest run",
+    "verify:bundles": "node scripts/verify-lazy-bundles.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

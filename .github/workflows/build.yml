@@ -32,3 +32,6 @@ jobs:
 
       - name: Build
         run: npm run build
+
+      - name: Verify lazy bundles and size budget
+        run: npm run verify:bundles
